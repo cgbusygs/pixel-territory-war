@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v118 · Collision Pegs Only</title>
+  <title>像素领土战争 Demo v119 · Clean Marble Body</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v118</h1>
+        <h1>像素领土战争 · 战场态势 v119</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -3041,7 +3041,6 @@
       lctx.globalAlpha=1;lctx.shadowColor=FACTIONS[b.faction].color;lctx.shadowBlur=20;
       lctx.fillStyle='rgba(1,7,17,.96)';lctx.strokeStyle=FACTIONS[b.faction].color;lctx.lineWidth=2.4;
       lctx.beginPath();lctx.arc(b.x,b.y,b.r+4,0,TAU);lctx.fill();lctx.stroke();
-      lctx.globalAlpha=.52;lctx.beginPath();lctx.arc(b.x,b.y,b.r+7+Math.sin(t*4+b.slot)*1.4,0,TAU);lctx.stroke();
       lctx.restore();
       drawBallValueLabel(b);
     }
@@ -3336,6 +3335,7 @@
   log('Demo v115 已启动：左上、左下转盘角速度提升至 v114 的 150%，右侧转盘保持原速。');
   log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
   log('Demo v118 已启动：撤销左侧转盘直径放大，四个转盘恢复统一尺寸；移除不参与弹珠碰撞的装饰外圈。');
+  log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
