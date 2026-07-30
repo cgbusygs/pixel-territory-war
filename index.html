@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v123 · Machine Filament Trails</title>
+  <title>像素领土战争 Demo v124 · Territory Filament Trails</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v123</h1>
+        <h1>像素领土战争 · 战场态势 v124</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -663,8 +663,7 @@
   let lastPowerHistoryTime=-1;
   const AUTO_PAUSE_SECONDS=360;
   let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, autoPauseTriggered=false, last=performance.now();
-  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[],machineGhosts=[];
-  const MAX_MACHINE_GHOSTS=96;
+  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
   const INITIAL_MACHINE_FIREPOWER=400000;
@@ -1114,7 +1113,6 @@
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
     machineTrailCtx.clearRect(0,0,machineTrailCanvas.width,machineTrailCanvas.height);
-    machineGhosts.length=0;
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
@@ -2104,8 +2102,19 @@
     machineTrailCtx.fillRect(0,0,machineTrailCanvas.width,machineTrailCanvas.height);machineTrailCtx.restore();
   }
 
+  function isOccupiedWarPoint(x,y){
+    const gx=Math.max(0,Math.min(GRID_W-1,Math.floor(x/WV.w*GRID_W)));
+    const gy=Math.max(0,Math.min(GRID_H-1,Math.floor(y/WV.h*GRID_H)));
+    return owner[gy*GRID_W+gx]!==255;
+  }
+
   function pushTrailSegment(p){
     const kindCode=p.kind==='machine'?0:p.kind==='orb'?1:2;
+    if(kindCode===0&&(
+      !isOccupiedWarPoint(p.prevX,p.prevY)||
+      !isOccupiedWarPoint((p.prevX+p.x)*.5,(p.prevY+p.y)*.5)||
+      !isOccupiedWarPoint(p.x,p.y)
+    ))return;
     let node=0;
     if(kindCode===0){
       const nodeTick=Math.floor(simulationElapsed*9+p.id*.37);
@@ -2177,41 +2186,8 @@
     machineTrailCtx.restore();frameTrailSegments.length=0;
   }
 
-  function spawnMachineGhost(p){
-    if(machineGhosts.length>=MAX_MACHINE_GHOSTS)return;
-    const ghost={};
-    ghost.kind='machine';ghost.x=p.x;ghost.y=p.y;ghost.prevX=p.x;ghost.prevY=p.y;ghost.vx=p.vx;ghost.vy=p.vy;
-    ghost.faction=p.faction;ghost.id=p.id;ghost.trailNodeTick=p.trailNodeTick;
-    ghost.life=1.28+(p.id%7)*.115;ghost.maxLife=1.97;
-    ghost.phase=p.jitterPhase;ghost.phaseB=p.jitterPhaseB;ghost.jitterHeading=0;
-    machineGhosts.push(ghost);
-  }
-
-  function updateMachineGhosts(dt){
-    for(let i=machineGhosts.length-1;i>=0;i--){
-      const g=machineGhosts[i];
-      g.life-=dt;
-      if(g.life<=0){
-        const last=machineGhosts.pop();if(i<machineGhosts.length)machineGhosts[i]=last;
-        continue;
-      }
-      g.prevX=g.x;g.prevY=g.y;
-      g.phase+=dt*4.4;g.phaseB+=dt*1.9;
-      const heading=(Math.sin(g.phase)+Math.sin(g.phaseB)*.48)*5.8*Math.PI/180;
-      const delta=heading-g.jitterHeading;g.jitterHeading=heading;
-      const c=Math.cos(delta),s=Math.sin(delta),vx=g.vx*c-g.vy*s,vy=g.vx*s+g.vy*c;
-      g.vx=vx;g.vy=vy;g.x+=vx*dt;g.y+=vy*dt;
-      if(g.x<0||g.x>WV.w||g.y<0||g.y>WV.h){
-        const last=machineGhosts.pop();if(i<machineGhosts.length)machineGhosts[i]=last;
-        continue;
-      }
-      pushTrailSegment(g);
-    }
-  }
-
   function releaseProjectile(index){
     const p=projectiles[index],last=projectiles.pop();if(index<projectiles.length)projectiles[index]=last;
-    if(p.kind==='machine')spawnMachineGhost(p);
     p.kind='';p.firepower=0;p.rounds=0;p.dead=false;p.nominalSpeed=0;p.jitterHeading=0;p.orbShieldContacts=0;projectilePool.push(p);
   }
 
@@ -2811,7 +2787,6 @@
       if(paintNow){p.paintX=p.x;p.paintY=p.y;}
       pushTrailSegment(p);
     }
-    updateMachineGhosts(dt);
     trailUpdateCarry+=dt;
     if(trailUpdateCarry>=TRAIL_UPDATE_STEP){const trailDt=trailUpdateCarry;trailUpdateCarry%=TRAIL_UPDATE_STEP;renderTrailBatch(trailDt);}
 
@@ -3400,24 +3375,16 @@
     wctx.save();wctx.globalCompositeOperation='lighter';
     let hasMachineHalo=false;wctx.beginPath();
     for(const p of projectiles){
-      if(p.kind!=='machine')continue;
+      if(p.kind!=='machine'||!isOccupiedWarPoint(p.x,p.y))continue;
       const r=Math.max(4.4,p.r*.82);
       wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineHalo=true;
-    }
-    for(const g of machineGhosts){
-      const r=4.2;
-      wctx.moveTo(g.x+r,g.y);wctx.arc(g.x,g.y,r,0,TAU);hasMachineHalo=true;
     }
     if(hasMachineHalo){wctx.globalAlpha=.26;wctx.fillStyle='#168fff';wctx.fill();}
     let hasMachineNode=false;wctx.beginPath();
     for(const p of projectiles){
-      if(p.kind!=='machine')continue;
+      if(p.kind!=='machine'||!isOccupiedWarPoint(p.x,p.y))continue;
       const r=Math.max(2.2,p.r*.48);
       wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineNode=true;
-    }
-    for(const g of machineGhosts){
-      const r=2.35;
-      wctx.moveTo(g.x+r,g.y);wctx.arc(g.x,g.y,r,0,TAU);hasMachineNode=true;
     }
     if(hasMachineNode){wctx.globalAlpha=.70;wctx.fillStyle='#67cdff';wctx.fill();}
     wctx.restore();
@@ -3513,13 +3480,9 @@
     if(hasCore){wctx.globalAlpha=.96;wctx.fillStyle='#f6ffff';wctx.fill();}
     let hasMachineCore=false;wctx.beginPath();
     for(const p of projectiles){
-      if(p.kind!=='machine')continue;
+      if(p.kind!=='machine'||!isOccupiedWarPoint(p.x,p.y))continue;
       const r=Math.max(.72,p.r*.25);
       wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineCore=true;
-    }
-    for(const g of machineGhosts){
-      const r=1.15;
-      wctx.moveTo(g.x+r,g.y);wctx.arc(g.x,g.y,r,0,TAU);hasMachineCore=true;
     }
     if(hasMachineCore){wctx.globalAlpha=.98;wctx.fillStyle='#f2fdff';wctx.fill();}
     wctx.restore();
@@ -3640,7 +3603,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
-  log('Demo v123 已启动：机枪弹升级为冷蓝光丝、分段残影与高亮节点；伤害、碰撞和弹药逻辑保持不变。');
+  log('Demo v124 已启动：取消机枪视觉续飞，冷蓝光丝与节点仅显示在已占领领土上；伤害、碰撞和弹药逻辑保持不变。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
