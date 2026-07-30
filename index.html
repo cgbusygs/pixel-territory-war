@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v139 · Lossless Hotpaths</title>
+  <title>像素领土战争 Demo v140 · WebGL2 Territory</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -411,7 +411,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v139</h1>
+        <h1>像素领土战争 · 战场态势 v140</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -747,6 +747,14 @@
   territoryCanvas.height=GRID_H;
   const territoryCtx=territoryCanvas.getContext('2d',{alpha:false});
   territoryCtx.imageSmoothingEnabled=false;
+  // v140：领土层优先由 WebGL2 片元着色器按占领时间着色；查询参数
+  // ?territoryRenderer=cpu 可强制使用原 Canvas 2D 路径做画质和性能对照。
+  const territoryGpuCanvas=document.createElement('canvas');
+  territoryGpuCanvas.width=GRID_W;
+  territoryGpuCanvas.height=GRID_H;
+  const TERRITORY_RENDERER_REQUEST=new URLSearchParams(location.search).get('territoryRenderer')||'auto';
+  let territoryGpuActive=false,territoryGpuContext=null,territoryGpuProgram=null,territoryGpuVao=null;
+  let territoryGpuOwnerTexture=null,territoryGpuTickTexture=null,territoryGpuUniforms=null,territoryGpuRenderer='Canvas 2D';
   const territoryImage=territoryCtx.createImageData(GRID_W,GRID_H);
   const territoryPixels=territoryImage.data;
   const territoryPixelWords=new Uint32Array(territoryPixels.buffer);
@@ -798,6 +806,159 @@
   const impactMaskCache=new Map();
   const IMPACT_MASK_CACHE_MAX=TUNING.cache.impactMaskMaxEntries;
   let territorySimCarry=0,territoryUploadCarry=0,territoryBrightnessCarry=0,territoryFlashCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,hudTextCarry=HUD_TEXT_STEP;
+
+  function compileTerritoryGpuShader(gl,type,source){
+    const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);
+    if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){
+      const message=gl.getShaderInfoLog(shader)||'未知着色器错误';gl.deleteShader(shader);throw new Error(message);
+    }
+    return shader;
+  }
+
+  function createTerritoryGpuTexture(gl,internalFormat,format,type){
+    const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,internalFormat,GRID_W,GRID_H,0,format,type,null);
+    return texture;
+  }
+
+  function updateTerritoryRendererBadge(){
+    if(UI.profileBadge)UI.profileBadge.textContent=`${PERF_PROFILE.name} · ${territoryGpuActive?'GPU领地':'CPU领地'}`;
+  }
+
+  function rebuildTerritoryCpuImage(){
+    territoryPixels.set(neutralTerritoryPixels);
+    territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);
+    fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;
+    const currentTick=Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ));
+    const flashTicks=Math.round(TERRITORY_FLASH_DURATION*TERRITORY_COLOR_TICK_HZ);
+    for(let cellIndex=0;cellIndex<owner.length;cellIndex++){
+      const faction=owner[cellIndex];if(faction===255)continue;
+      const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
+      writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
+      if(ageTick<TERRITORY_COLOR_TICK_COUNT-1){territoryFadeTracked[cellIndex]=1;fadingTerritoryCells.push(cellIndex);}
+      if(ageTick<flashTicks){territoryFlashTracked[cellIndex]=1;flashingTerritoryCells.push(cellIndex);}
+    }
+    territoryCtx.putImageData(territoryImage,0,0);
+    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
+  }
+
+  function initTerritoryGpu(){
+    if(TERRITORY_RENDERER_REQUEST==='cpu')return false;
+    try{
+      const gl=territoryGpuCanvas.getContext('webgl2',{
+        alpha:false,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,
+        preserveDrawingBuffer:false,powerPreference:'high-performance',desynchronized:true
+      });
+      if(!gl)return false;
+      const vertexSource=`#version 300 es
+        precision highp float;
+        void main(){
+          vec2 position=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
+          gl_Position=vec4(position*2.0-1.0,0.0,1.0);
+        }`;
+      const fragmentSource=`#version 300 es
+        precision highp float;
+        precision highp int;
+        precision highp usampler2D;
+        uniform usampler2D uOwner;
+        uniform usampler2D uCapturedTick;
+        uniform uint uCurrentTick;
+        uniform vec3 uBase[4];
+        uniform vec3 uFresh[4];
+        out vec4 outColor;
+        void main(){
+          ivec2 screenCell=ivec2(gl_FragCoord.xy);
+          int x=clamp(screenCell.x,0,${GRID_W-1});
+          int y=${GRID_H-1}-clamp(screenCell.y,0,${GRID_H-1});
+          ivec2 cell=ivec2(x,y);
+          uint faction=texelFetch(uOwner,cell,0).r;
+          vec3 rgb;
+          if(faction>3u){
+            bool alternate=((x+y)&1)==1;
+            rgb=alternate?vec3(5.0,14.0,28.0):vec3(3.0,10.0,22.0);
+          }else{
+            uint capturedTick=texelFetch(uCapturedTick,cell,0).r;
+            uint ageTick=uCurrentTick>=capturedTick?uCurrentTick-capturedTick:0u;
+            float age=float(ageTick)/${TERRITORY_COLOR_TICK_HZ.toFixed(1)};
+            float fadeAge=max(0.0,age-${TERRITORY_FLASH_DURATION.toFixed(1)});
+            float freshness=max(0.0,1.0-fadeAge/${TERRITORY_FADE_DURATION.toFixed(1)});
+            float flashBoost=age<${TERRITORY_FLASH_DURATION.toFixed(1)}?2.0-age/${TERRITORY_FLASH_DURATION.toFixed(1)}:1.0;
+            vec3 color=(uBase[int(faction)]+(uFresh[int(faction)]-uBase[int(faction)])*freshness)*flashBoost;
+            rgb=floor(min(vec3(255.0),color)+vec3(0.5));
+          }
+          outColor=vec4(rgb/255.0,1.0);
+        }`;
+      const vertexShader=compileTerritoryGpuShader(gl,gl.VERTEX_SHADER,vertexSource);
+      const fragmentShader=compileTerritoryGpuShader(gl,gl.FRAGMENT_SHADER,fragmentSource);
+      const program=gl.createProgram();gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
+      gl.deleteShader(vertexShader);gl.deleteShader(fragmentShader);
+      if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program)||'WebGL2 程序链接失败');
+
+      territoryGpuContext=gl;territoryGpuProgram=program;territoryGpuVao=gl.createVertexArray();
+      territoryGpuOwnerTexture=createTerritoryGpuTexture(gl,gl.R8UI,gl.RED_INTEGER,gl.UNSIGNED_BYTE);
+      territoryGpuTickTexture=createTerritoryGpuTexture(gl,gl.R32UI,gl.RED_INTEGER,gl.UNSIGNED_INT);
+      territoryGpuUniforms={
+        currentTick:gl.getUniformLocation(program,'uCurrentTick'),
+        base:gl.getUniformLocation(program,'uBase[0]'),
+        fresh:gl.getUniformLocation(program,'uFresh[0]')
+      };
+      gl.useProgram(program);
+      gl.uniform1i(gl.getUniformLocation(program,'uOwner'),0);
+      gl.uniform1i(gl.getUniformLocation(program,'uCapturedTick'),1);
+      gl.uniform3fv(territoryGpuUniforms.base,new Float32Array(territoryRGB.flat()));
+      gl.uniform3fv(territoryGpuUniforms.fresh,new Float32Array(territoryFreshRGB.flat()));
+      const rendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
+      territoryGpuRenderer=rendererInfo?gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+      territoryGpuActive=true;
+      territoryGpuCanvas.addEventListener('webglcontextlost',event=>{
+        event.preventDefault();territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 上下文已丢失）';
+        rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
+      },{once:true});
+      return true;
+    }catch(error){
+      console.warn('WebGL2 领土层初始化失败，已回退 Canvas 2D：',error);
+      territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 初始化失败）';
+      return false;
+    }
+  }
+
+  function uploadTerritoryGpuRect(x,y,w,h){
+    const gl=territoryGpuContext;if(!territoryGpuActive||!gl||w<=0||h<=0)return;
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+  }
+
+  function uploadTerritoryGpuFull(){
+    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+    gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,GRID_W,GRID_H,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+    gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,GRID_W,GRID_H,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
+  }
+
+  function renderTerritoryGpu(){
+    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
+    gl.viewport(0,0,GRID_W,GRID_H);gl.useProgram(territoryGpuProgram);gl.bindVertexArray(territoryGpuVao);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);
+    gl.uniform1ui(territoryGpuUniforms.currentTick,Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))>>>0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+
+  window.__territoryRendererInfo=()=>({
+    active:territoryGpuActive,
+    requested:TERRITORY_RENDERER_REQUEST,
+    renderer:territoryGpuRenderer
+  });
   const frameTrailSegments=[];
   const BALL_HASH_CELL=TUNING.collision.ballHashCell;
   const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
@@ -1161,10 +1322,11 @@
   function resetTerritory(){
     owner.fill(255);territoryCapturedTick.fill(0);territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);territoryRefreshStamp.fill(0);fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;territoryCounts.fill(0);
     territoryRefreshStepId=0;
-    territoryPixels.set(neutralTerritoryPixels);
+    if(!territoryGpuActive)territoryPixels.set(neutralTerritoryPixels);
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
-    territoryCtx.putImageData(territoryImage,0,0);
+    if(territoryGpuActive)uploadTerritoryGpuFull();
+    else territoryCtx.putImageData(territoryImage,0,0);
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
@@ -2158,9 +2320,11 @@
     if(territoryRefreshStamp[idx]===refreshToken)return false;
     territoryRefreshStamp[idx]=refreshToken;
     territoryCapturedTick[idx]=Math.max(0,Math.round(capturedTime*TERRITORY_COLOR_TICK_HZ));
-    if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
-    if(!territoryFlashTracked[idx]){territoryFlashTracked[idx]=1;flashingTerritoryCells.push(idx);}
-    writeTerritoryAgeColorTick(idx,faction,0);
+    if(!territoryGpuActive){
+      if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
+      if(!territoryFlashTracked[idx]){territoryFlashTracked[idx]=1;flashingTerritoryCells.push(idx);}
+      writeTerritoryAgeColorTick(idx,faction,0);
+    }
     return true;
   }
 
@@ -2237,6 +2401,25 @@
 
   function flushTerritory(force=false){
     if(!dirtyTerritoryTileCount)return;
+    if(territoryGpuActive){
+      if(force||dirtyTerritoryTileCount>360)uploadTerritoryGpuFull();
+      else{
+        for(let ty=0;ty<TERRITORY_TILE_ROWS;ty++){
+          let tx=0;
+          while(tx<TERRITORY_TILE_COLS){
+            while(tx<TERRITORY_TILE_COLS&&!dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
+            if(tx>=TERRITORY_TILE_COLS)break;
+            const runStart=tx;
+            while(tx<TERRITORY_TILE_COLS&&dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
+            const x=runStart*TERRITORY_TILE_SIZE,y=ty*TERRITORY_TILE_SIZE;
+            const w=Math.min(GRID_W-x,(tx-runStart)*TERRITORY_TILE_SIZE),h=Math.min(GRID_H-y,TERRITORY_TILE_SIZE);
+            uploadTerritoryGpuRect(x,y,w,h);
+          }
+        }
+      }
+      dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
+      return;
+    }
     // 大面积同时变化时整图上传更便宜；局部变化则按横向连续瓦片分段上传。
     if(force||dirtyTerritoryTileCount>360){
       territoryCtx.putImageData(territoryImage,0,0);
@@ -3006,10 +3189,12 @@
         if(p.life<=0){const last=pulses.pop();if(i<pulses.length)pulses[i]=last;}
       }
     }
-    territoryFlashCarry+=dt;
-    if(territoryFlashCarry>=TERRITORY_FLASH_STEP){territoryFlashCarry%=TERRITORY_FLASH_STEP;updateTerritoryFlash();}
-    territoryBrightnessCarry+=dt;
-    if(territoryBrightnessCarry>=TERRITORY_BRIGHTNESS_STEP){territoryBrightnessCarry%=TERRITORY_BRIGHTNESS_STEP;updateTerritoryBrightness();}
+    if(!territoryGpuActive){
+      territoryFlashCarry+=dt;
+      if(territoryFlashCarry>=TERRITORY_FLASH_STEP){territoryFlashCarry%=TERRITORY_FLASH_STEP;updateTerritoryFlash();}
+      territoryBrightnessCarry+=dt;
+      if(territoryBrightnessCarry>=TERRITORY_BRIGHTNESS_STEP){territoryBrightnessCarry%=TERRITORY_BRIGHTNESS_STEP;updateTerritoryBrightness();}
+    }
     if(territoryUploadCarry>=TERRITORY_UPLOAD_STEP){territoryUploadCarry%=TERRITORY_UPLOAD_STEP;flushTerritory();}
   }
 
@@ -3639,7 +3824,8 @@
     wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);wctx.clearRect(0,0,WV.w,WV.h);
     const t=performance.now()/1000;
     wctx.drawImage(battleStaticCanvas,0,0);
-    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
+    if(territoryGpuActive)renderTerritoryGpu();
+    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?territoryGpuCanvas:territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
     prepareProjectileRenderFrame();
@@ -3897,7 +4083,7 @@
     updateStocks();updateStats();
   });
   resetTopHitCounts();
-  resetTerritory();initializeFixedBallPool();updateBaseTextCaches();
+  initTerritoryGpu();resetTerritory();initializeFixedBallPool();updateBaseTextCaches();updateTerritoryRendererBadge();
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
@@ -3924,6 +4110,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log(`Demo v140 已启动：领土归属与占领时间保留在 CPU，亮度衰减交由 WebGL2 片元着色器；当前为 ${territoryGpuActive?'GPU':'CPU 回退'} 领土层。`);
   log('Demo v139 已启动：同物理步领土刷新去重；占领热路径内联；弹丸碰撞复用命中缓冲并缓存数值类型；亮度与视觉参数保持 v138 一致。');
   log('Demo v138 已启动：大球与普通弹丸采用分层空间碰撞；领土衰减改为无损 RGBA 查表；战场弹丸按弹种与阵营一次分类后批量绘制；完整冲击圆跳过无意义排序。');
   log('Demo v137 已启动：大球采用高亮能量核心、双层环、旋转弧段和阵营色轨道粒子；吸收己方机枪弹时播放弧线汇入、收束光点、内缩环与局部白热弧动画。');
