@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v141 · Match Capture</title>
+  <title>像素领土战争 Demo v142 · Full Bleed Capture</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v141</h1>
+        <h1>像素领土战争 · 战场态势 v142</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -3269,7 +3269,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v141-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v142-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -3286,59 +3286,15 @@
 
   function drawMatchVideoFrame(){
     if(!matchVideoCtx||!matchRecordingPreset)return;
-    const ctx=matchVideoCtx,scale=matchRecordingPreset.width/1920;
-    ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#01040b';ctx.fillRect(0,0,matchVideoCanvas.width,matchVideoCanvas.height);
-    ctx.setTransform(scale,0,0,scale,0,0);
-    const baseW=1920,baseH=1080;
-
-    const background=ctx.createLinearGradient(0,0,0,baseH);
-    background.addColorStop(0,'#041020');background.addColorStop(.55,'#020813');background.addColorStop(1,'#01040b');
-    ctx.fillStyle=background;ctx.fillRect(0,0,baseW,baseH);
-    ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle='#176a8f';ctx.lineWidth=1;
-    for(let x=0;x<=baseW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,baseH);ctx.stroke();}
-    for(let y=0;y<=baseH;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(baseW,y);ctx.stroke();}
-    ctx.restore();
-
-    ctx.fillStyle='rgba(2,10,22,.94)';ctx.fillRect(36,22,1848,68);
-    ctx.strokeStyle='rgba(33,218,255,.58)';ctx.lineWidth=1;ctx.strokeRect(36.5,22.5,1847,67);
-    ctx.fillStyle='#e9faff';ctx.font='800 28px "Bahnschrift Condensed","Microsoft YaHei",sans-serif';ctx.textBaseline='middle';
-    ctx.fillText('像素领土战争 · 一局录像',58,53);
-    ctx.fillStyle='#54dff5';ctx.font='700 13px Consolas,monospace';ctx.fillText('FIREPOWER MATRIX  +  TERRITORY BATTLEFIELD',58,76);
-    const gameState=gameEnded
-      ?`终局 · ${FACTIONS[winnerFaction].name}获胜`
-      :monochromeFaction>=0
-        ?`${FACTIONS[monochromeFaction].name}单色锁定 ${monochromeHoldSeconds.toFixed(1)} / ${MONOCHROME_WIN_SECONDS.toFixed(0)} 秒`
-        :`运行 ${formatClock(simulationElapsed)} · ${speed.toFixed(2)}×`;
-    ctx.textAlign='right';ctx.fillStyle=gameEnded?FACTIONS[winnerFaction].color:'#a8c6d9';ctx.font='700 17px Consolas,"Microsoft YaHei",monospace';
-    ctx.fillText(`${gameState} · ${matchRecordingPreset.width} × ${matchRecordingPreset.height}`,1860,55);
-    ctx.textAlign='left';
-
-    const leftX=130,leftY=132,leftW=713,leftH=900,warX=889,warY=132,warSize=900;
-    const drawPanel=(x,y,w,h,label,index,color)=>{
-      ctx.fillStyle='rgba(2,8,18,.96)';ctx.fillRect(x-12,y-38,w+24,h+50);
-      ctx.strokeStyle='rgba(45,143,207,.62)';ctx.lineWidth=1;ctx.strokeRect(x-11.5,y-37.5,w+23,h+49);
-      ctx.fillStyle=color;ctx.fillRect(x-12,y-38,118,2);
-      ctx.fillStyle='#dff8ff';ctx.font='800 17px "Microsoft YaHei",sans-serif';ctx.fillText(label,x,y-17);
-      ctx.fillStyle='#6b9ab6';ctx.font='700 11px Consolas,monospace';ctx.textAlign='right';ctx.fillText(index,x+w,y-17);ctx.textAlign='left';
-    };
-    drawPanel(leftX,leftY,leftW,leftH,'火力生成矩阵','MATRIX / 01','#24e6ff');
-    drawPanel(warX,warY,warSize,warSize,'四方战场态势','TERRITORY / 1000²','#38f0a5');
+    const ctx=matchVideoCtx;
+    const outputW=matchRecordingPreset.width,outputH=matchRecordingPreset.height;
+    const leftW=outputH*(LV.w/LV.h),warW=outputH*(WV.w/WV.h);
+    const outerCrop=Math.max(0,(leftW+warW-outputW)/2);
+    const leftX=-outerCrop,warX=leftX+leftW-.5;
+    ctx.setTransform(1,0,0,1,0,0);
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
-    ctx.drawImage(leftCanvas,leftX,leftY,leftW,leftH);
-    ctx.drawImage(warCanvas,warX,warY,warSize,warSize);
-    ctx.strokeStyle='rgba(57,218,255,.72)';ctx.strokeRect(leftX+.5,leftY+.5,leftW-1,leftH-1);
-    ctx.strokeStyle='rgba(53,219,174,.62)';ctx.strokeRect(warX+.5,warY+.5,warSize-1,warSize-1);
-
-    ctx.fillStyle='#6d9bb5';ctx.font='700 12px Consolas,"Microsoft YaHei",monospace';
-    ctx.fillText('胜利条件：同一阵营连续占领全部 1,000,000 格领土 10 秒',130,1054);
-    ctx.textAlign='right';ctx.fillText(`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · GPU ${territoryGpuActive?'ON':'FALLBACK'}`,1789,1054);ctx.textAlign='left';
-
-    if(gameEnded&&winnerFaction>=0){
-      ctx.fillStyle='rgba(1,5,12,.78)';ctx.fillRect(warX+110,warY+390,warSize-220,120);
-      ctx.strokeStyle=FACTIONS[winnerFaction].color;ctx.lineWidth=2;ctx.strokeRect(warX+110.5,warY+390.5,warSize-221,119);
-      ctx.fillStyle=FACTIONS[winnerFaction].color;ctx.textAlign='center';ctx.font='900 34px "Microsoft YaHei",sans-serif';ctx.fillText(`${FACTIONS[winnerFaction].name}占领全境`,warX+warSize/2,warY+435);
-      ctx.fillStyle='#eafaff';ctx.font='700 16px Consolas,"Microsoft YaHei",monospace';ctx.fillText(`MATCH COMPLETE · ${formatClock(simulationElapsed)}`,warX+warSize/2,warY+478);ctx.textAlign='left';
-    }
+    ctx.drawImage(leftCanvas,leftX,0,leftW,outputH);
+    ctx.drawImage(warCanvas,warX,0,warW+.5,outputH);
     ctx.setTransform(1,0,0,1,0,0);
   }
 
@@ -4374,7 +4330,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log(`Demo v141 已启动：取消 6 分钟自动暂停；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒即结束；支持 1080P60 / 4K30 的 16:9 一局录像与流式导出。`);
+  log(`Demo v142 已启动：一局录像仅包含火力生成矩阵与战场，两块画布无标题、无边框、无留白地铺满 16:9；支持 1080P60 / 4K30 流式导出。`);
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
