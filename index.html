@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v132 · Elimination Rewards</title>
+  <title>像素领土战争 Demo v133 · Capture Flash</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v132</h1>
+        <h1>像素领土战争 · 战场态势 v133</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -663,7 +663,7 @@
   let lastPowerHistoryTime=-1;
   const AUTO_PAUSE_SECONDS=360;
   let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, autoPauseTriggered=false, last=performance.now();
-  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[], boundarySparkles=[];
+  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
   const INITIAL_MACHINE_FIREPOWER=400000;
@@ -695,8 +695,6 @@
   const MACHINE_JITTER_RATE_B=TUNING.machine.jitterRateB;
   // v38：机枪每次触发消耗比例在 v37 基础上再次减半；同时降低弹体、核心、尾迹与碰撞火花亮度。
   const MAX_EFFECT_PARTICLES=520;
-  const MAX_BOUNDARY_SPARKLES=360;
-  const BOUNDARY_SPARKLE_STEP=.05;
   // 数值枚举和位标记替代每帧 Set<string> 查询。
   const FX_TYPE=Object.freeze({GENERIC:0,SHIELD_SPARK:1,ANNIHILATION_SPARK:2,SHIELD_HIT:3,ANNIHILATION:4,IMPACT:5,BASE_HIT:6,PROJECTILE_HIT:7});
   const FX_FLAG_SPARK=1,FX_FLAG_EXPANDING=2;
@@ -734,7 +732,9 @@
   const owner=new Uint8Array(GRID_W*GRID_H);
   const territoryCapturedAt=new Float32Array(GRID_W*GRID_H);
   const territoryFadeTracked=new Uint8Array(GRID_W*GRID_H);
+  const territoryFlashTracked=new Uint8Array(GRID_W*GRID_H);
   const fadingTerritoryCells=[];
+  const flashingTerritoryCells=[];
   const territoryCounts=new Uint32Array(4);
 
   // 离屏领土画布：占领发生时只更新对应像素，不在每一帧遍历 100 万格。
@@ -764,6 +764,8 @@
     return territoryRGB[faction].map((base,channel)=>Math.round(base+(accent[channel]-base)*.62));
   });
   const TERRITORY_BRIGHTNESS_STEP=.5;
+  const TERRITORY_FLASH_STEP=.1;
+  const TERRITORY_FLASH_DURATION=.5;
   const TERRITORY_TILE_SIZE=32;
   const TERRITORY_TILE_COLS=Math.ceil(GRID_W/TERRITORY_TILE_SIZE);
   const TERRITORY_TILE_ROWS=Math.ceil(GRID_H/TERRITORY_TILE_SIZE);
@@ -771,7 +773,7 @@
   let dirtyTerritoryTileCount=0;
   const impactMaskCache=new Map();
   const IMPACT_MASK_CACHE_MAX=TUNING.cache.impactMaskMaxEntries;
-  let territorySimCarry=0,territoryUploadCarry=0,territoryBrightnessCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,boundarySparkleSpawnCarry=0,hudTextCarry=HUD_TEXT_STEP;
+  let territorySimCarry=0,territoryUploadCarry=0,territoryBrightnessCarry=0,territoryFlashCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,hudTextCarry=HUD_TEXT_STEP;
   const frameTrailSegments=[];
   const BALL_HASH_CELL=TUNING.collision.ballHashCell;
   const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
@@ -1079,7 +1081,6 @@
       const maxX=Math.min(GRID_W-1,Math.ceil(cx+BASE_OUTER_RADIUS));
       const minY=Math.max(0,Math.floor(cy-BASE_OUTER_RADIUS));
       const maxY=Math.min(GRID_H-1,Math.ceil(cy+BASE_OUTER_RADIUS));
-      const rgb=territoryRGB[faction];
       for(let y=minY;y<=maxY;y++){
         const dy=(y+.5)-cy;
         for(let x=minX;x<=maxX;x++){
@@ -1090,33 +1091,39 @@
           if(previous===faction)continue;
           if(previous!==255)territoryCounts[previous]--;
           owner[cellIndex]=faction;
-          territoryCapturedAt[cellIndex]=0;
-          if(!territoryFadeTracked[cellIndex]){territoryFadeTracked[cellIndex]=1;fadingTerritoryCells.push(cellIndex);}
           territoryCounts[faction]++;
-          const pixelIndex=cellIndex*4;
-          const fresh=territoryFreshRGB[faction];
-          territoryPixels[pixelIndex]=fresh[0];
-          territoryPixels[pixelIndex+1]=fresh[1];
-          territoryPixels[pixelIndex+2]=fresh[2];
-          territoryPixels[pixelIndex+3]=255;
+          refreshTerritoryCell(cellIndex,faction,0);
         }
       }
     }
   }
 
   function resetTerritory(){
-    owner.fill(255);territoryCapturedAt.fill(0);territoryFadeTracked.fill(0);fadingTerritoryCells.length=0;territoryCounts.fill(0);
+    owner.fill(255);territoryCapturedAt.fill(0);territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;territoryCounts.fill(0);
     territoryPixels.set(neutralTerritoryPixels);
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
     territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;boundarySparkleSpawnCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;boundarySparkles.length=0;
+    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
     }
+  }
+
+  function writeTerritoryAgeColor(cellIndex,faction,age){
+    const fadeAge=Math.max(0,age-TERRITORY_FLASH_DURATION);
+    const freshness=Math.max(0,1-fadeAge/30);
+    const flashBoost=age<TERRITORY_FLASH_DURATION?2-age/TERRITORY_FLASH_DURATION:1;
+    const base=territoryRGB[faction],fresh=territoryFreshRGB[faction],pixelIndex=cellIndex*4;
+    const r=Math.min(255,Math.round((base[0]+(fresh[0]-base[0])*freshness)*flashBoost));
+    const g=Math.min(255,Math.round((base[1]+(fresh[1]-base[1])*freshness)*flashBoost));
+    const b=Math.min(255,Math.round((base[2]+(fresh[2]-base[2])*freshness)*flashBoost));
+    if(territoryPixels[pixelIndex]===r&&territoryPixels[pixelIndex+1]===g&&territoryPixels[pixelIndex+2]===b)return false;
+    territoryPixels[pixelIndex]=r;territoryPixels[pixelIndex+1]=g;territoryPixels[pixelIndex+2]=b;territoryPixels[pixelIndex+3]=255;
+    return true;
   }
 
   function updateTerritoryBrightness(){
@@ -1129,15 +1136,8 @@
         continue;
       }
       const age=Math.max(0,simulationElapsed-territoryCapturedAt[cellIndex]);
-      const freshness=Math.max(0,1-age/30);
-      const base=territoryRGB[faction],fresh=territoryFreshRGB[faction],pixelIndex=cellIndex*4;
-      const r=Math.round(base[0]+(fresh[0]-base[0])*freshness);
-      const g=Math.round(base[1]+(fresh[1]-base[1])*freshness);
-      const b=Math.round(base[2]+(fresh[2]-base[2])*freshness);
-      if(territoryPixels[pixelIndex]!==r||territoryPixels[pixelIndex+1]!==g||territoryPixels[pixelIndex+2]!==b){
-        territoryPixels[pixelIndex]=r;territoryPixels[pixelIndex+1]=g;territoryPixels[pixelIndex+2]=b;changed=true;
-      }
-      if(age>=30){
+      if(writeTerritoryAgeColor(cellIndex,faction,age))changed=true;
+      if(age>=30+TERRITORY_FLASH_DURATION){
         territoryFadeTracked[cellIndex]=0;
         const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
       }
@@ -1148,32 +1148,23 @@
     }
   }
 
-  function spawnBoundarySparkles(dt){
-    boundarySparkleSpawnCarry+=dt;
-    if(boundarySparkleSpawnCarry<BOUNDARY_SPARKLE_STEP||boundarySparkles.length>=MAX_BOUNDARY_SPARKLES)return;
-    boundarySparkleSpawnCarry%=BOUNDARY_SPARKLE_STEP;
-    const wanted=Math.min(6,MAX_BOUNDARY_SPARKLES-boundarySparkles.length);
-    const cellW=WV.w/GRID_W,cellH=WV.h/GRID_H;
-    let spawned=0;
-    for(let attempt=0;attempt<1440&&spawned<wanted;attempt++){
-      const gx=1+Math.floor(Math.random()*(GRID_W-2));
-      const gy=1+Math.floor(Math.random()*(GRID_H-2));
-      const horizontal=Math.random()<.5;
-      const nx=gx+(horizontal?1:0),ny=gy+(horizontal?0:1);
-      const index=gy*GRID_W+gx,otherIndex=ny*GRID_W+nx;
-      const a=owner[index],b=owner[otherIndex];
-      if(a===b||(a===255&&b===255))continue;
-      let faction=a,ownedIndex=index,adjacentIndex=otherIndex;
-      if(a===255||(b!==255&&Math.random()<.5)){faction=b;ownedIndex=otherIndex;adjacentIndex=index;}
-      if(faction===255)continue;
-      const duration=.5+Math.random()*.7;
-      boundarySparkles.push({
-        x:horizontal?(gx+1)*cellW:(gx+.12+Math.random()*.76)*cellW,
-        y:horizontal?(gy+.12+Math.random()*.76)*cellH:(gy+1)*cellH,
-        faction,ownedIndex,adjacentIndex,life:duration,maxLife:duration,
-        size:.65+Math.random()*1.05
-      });
-      spawned++;
+  function updateTerritoryFlash(){
+    for(let i=flashingTerritoryCells.length-1;i>=0;i--){
+      const cellIndex=flashingTerritoryCells[i],faction=owner[cellIndex];
+      if(faction===255){
+        territoryFlashTracked[cellIndex]=0;
+        const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
+        continue;
+      }
+      const age=Math.max(0,simulationElapsed-territoryCapturedAt[cellIndex]);
+      if(writeTerritoryAgeColor(cellIndex,faction,age)){
+        const x=cellIndex%GRID_W,y=(cellIndex/GRID_W)|0,tileIndex=(y>>5)*TERRITORY_TILE_COLS+(x>>5);
+        if(!dirtyTerritoryTiles[tileIndex]){dirtyTerritoryTiles[tileIndex]=1;dirtyTerritoryTileCount++;}
+      }
+      if(age>=TERRITORY_FLASH_DURATION){
+        territoryFlashTracked[cellIndex]=0;
+        const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
+      }
     }
   }
 
@@ -2073,10 +2064,11 @@
     }
   }
 
-  function refreshTerritoryCell(idx,faction){
-    territoryCapturedAt[idx]=simulationElapsed;
+  function refreshTerritoryCell(idx,faction,capturedTime=simulationElapsed){
+    territoryCapturedAt[idx]=capturedTime;
     if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
-    const p=idx*4,rgb=territoryFreshRGB[faction];territoryPixels[p]=rgb[0];territoryPixels[p+1]=rgb[1];territoryPixels[p+2]=rgb[2];territoryPixels[p+3]=255;
+    if(!territoryFlashTracked[idx]){territoryFlashTracked[idx]=1;flashingTerritoryCells.push(idx);}
+    writeTerritoryAgeColor(idx,faction,0);
   }
 
   function paintTerritoryCell(x,y,faction,refreshOwned=false){
@@ -2836,14 +2828,6 @@
     effectUpdateCarry+=dt;
     if(effectUpdateCarry>=EFFECT_UPDATE_STEP){
       const effectDt=effectUpdateCarry;effectUpdateCarry%=EFFECT_UPDATE_STEP;
-      spawnBoundarySparkles(effectDt);
-      for(let i=boundarySparkles.length-1;i>=0;i--){
-        const sparkle=boundarySparkles[i];
-        sparkle.life-=effectDt;
-        if(sparkle.life<=0||owner[sparkle.ownedIndex]!==sparkle.faction||owner[sparkle.adjacentIndex]===sparkle.faction){
-          const last=boundarySparkles.pop();if(i<boundarySparkles.length)boundarySparkles[i]=last;
-        }
-      }
       for(let i=pulses.length-1;i>=0;i--){
         const p=pulses[i];
         p.age=(p.age||0)+effectDt;
@@ -2859,6 +2843,8 @@
         if(p.life<=0){const last=pulses.pop();if(i<pulses.length)pulses[i]=last;}
       }
     }
+    territoryFlashCarry+=dt;
+    if(territoryFlashCarry>=TERRITORY_FLASH_STEP){territoryFlashCarry%=TERRITORY_FLASH_STEP;updateTerritoryFlash();}
     territoryBrightnessCarry+=dt;
     if(territoryBrightnessCarry>=TERRITORY_BRIGHTNESS_STEP){territoryBrightnessCarry%=TERRITORY_BRIGHTNESS_STEP;updateTerritoryBrightness();}
     if(territoryUploadCarry>=TERRITORY_UPLOAD_STEP){territoryUploadCarry%=TERRITORY_UPLOAD_STEP;flushTerritory();}
@@ -3411,22 +3397,6 @@
     wctx.drawImage(battleStaticCanvas,0,0);
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
-    if(boundarySparkles.length){
-      wctx.save();wctx.globalCompositeOperation='lighter';
-      for(const sparkle of boundarySparkles){
-        const life=Math.max(0,sparkle.life/sparkle.maxLife);
-        const regionAge=Math.max(0,simulationElapsed-territoryCapturedAt[sparkle.ownedIndex]);
-        const regionBrightness=Math.max(.25,1-regionAge*.025);
-        const brightness=life*life*regionBrightness;
-        if(brightness<.012)continue;
-        const factionColor=FACTIONS[sparkle.faction].color;
-        wctx.globalAlpha=.13*brightness;wctx.fillStyle=factionColor;
-        wctx.beginPath();wctx.arc(sparkle.x,sparkle.y,sparkle.size*3.2,0,TAU);wctx.fill();
-        wctx.globalAlpha=.94*brightness;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.7);
-        wctx.beginPath();wctx.arc(sparkle.x,sparkle.y,sparkle.size*.68,0,TAU);wctx.fill();
-      }
-      wctx.restore();
-    }
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
@@ -3700,10 +3670,9 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v133 已启动：移除领土临界随机闪点；新占领方格在 0 秒以原亮度 200% 闪现，0.5 秒回落至原亮度后继续执行 30 秒衰减。');
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
-  log('Demo v130 已启动：领土边界闪点密度提升至 300%；亮度按所属方格最近占领时间计算，0 秒为 100%，30 秒降至 25% 并保持。');
-  log('Demo v129 已启动：异色领土临界网格随机出现阵营色闪点；单点由亮到暗，30 秒后全局亮度在 30 秒内衰减至 25% 并保持。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
