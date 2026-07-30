@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v112 · Internal Matrix UI Pass</title>
+  <title>像素领土战争 Demo v113 · Converter Width Rebalance</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v112</h1>
+        <h1>像素领土战争 · 战场态势 v113</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -402,7 +402,8 @@
       kickCooldown:.72             // 防止同一弹珠连续触发冲量
     }),
     converter:Object.freeze({
-      weights:Object.freeze([1,2,3,2,1]) // 霰弹、机枪、护盾、大球、狙击窗口宽度比例
+      // 机枪缩为原宽度 85%，护盾缩为 90%；释放宽度按其余三项原比例 1:2:1 回分配。
+      weights:Object.freeze([1.15,1.70,2.70,2.30,1.15])
     }),
     orbBulletMomentum:Object.freeze({
       inheritanceScale:.20,        // 所有“子弹→大球”速度继承缩为 v97 当前公式的 20%
@@ -720,7 +721,7 @@
     let converterX=PLAYFIELD.left;
     for(let i=0;i<order.length;i++){
       const w=i===order.length-1?PLAYFIELD.right-converterX:PLAYFIELD.width*weights[i]/totalWeight;
-      converterCells.push({x:converterX,w,key:order[i],left:converterX+3,right:converterX+w-3,bottom:BOARD.convertBottom-3,index:i,weight:weights[i],hitCount:0,hitLabel:CONVERTER_SHORT_LABELS[order[i]]||WEAPONS[order[i]].name});
+      converterCells.push({x:converterX,w,key:order[i],left:converterX+3,right:converterX+w-3,bottom:BOARD.convertBottom-3,index:i,weight:weights[i],share:w/PLAYFIELD.width,hitCount:0,hitLabel:CONVERTER_SHORT_LABELS[order[i]]||WEAPONS[order[i]].name});
       converterX+=w;
     }
   }
@@ -2996,7 +2997,7 @@
       lctx.globalAlpha=active?.72:.32;lctx.fillRect(cell.left+3,BOARD.convertTop+37,cell.right-cell.left-6,1);
       lctx.restore();
       drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,cell.x+cell.w/2,BOARD.convertTop+24,{fillStyle:active?'#fff':'rgba(174,203,220,.78)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?6:2});
-      drawText(lctx,`PORT ×${cell.weight}`,cell.x+cell.w/2,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
+      drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,cell.x+cell.w/2,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
     }
 
     // 命中反馈位于弹珠下层，并裁剪在对应物理区域内，避免扩散圆跨墙或遮住数值。
@@ -3317,6 +3318,7 @@
   log('Demo v96 已启动：弹珠碰撞启用空间哈希；冲击遮罩加入 LRU；中立网格重置改为批量复制；加入倍率保底和领土密度目标评分。');
   log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
   log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
+  log('Demo v113 已启动：机枪转换口缩为原宽度 85%，护盾缩为 90%；释放宽度按霰弹、大球、狙击原有 1:2:1 比例重新分配。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
