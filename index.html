@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v111 · Matrix UI & Collision Pass</title>
+  <title>像素领土战争 Demo v112 · Internal Matrix UI Pass</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -206,9 +206,9 @@
     .boot-notice.hidden{display:none}
 
     @media(max-width:1120px){.stage-169{width:min(100%,calc((100vh - var(--stage-pad))*16/9))}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}.panel-head:not(.matrix-panel-head) .panel-title::after{display:none}.panel-note{max-width:55%;line-height:1.35}}
-    @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:5/8;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
+    @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:19/24;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
     @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
-    @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:5/8}}
+    @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:19/24}}
   </style>
 </head>
 <body>
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v111</h1>
+        <h1>像素领土战争 · 战场态势 v112</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -949,6 +949,28 @@
     return minX+Math.random()*(maxX-minX);
   }
 
+  function findClearSpawnX(ball,preferredX){
+    const minX=PLAYFIELD.left+ball.r;
+    const maxX=PLAYFIELD.right-ball.r;
+    const span=Math.max(1,maxX-minX);
+    let bestX=Math.max(minX,Math.min(maxX,preferredX));
+    let bestClearance=-Infinity;
+    for(let i=0;i<24;i++){
+      const candidate=i===0
+        ?bestX
+        :minX+((((i*.61803398875)+(ball.faction*.137)+(ball.slot*.071))%1)*span);
+      let clearance=Infinity;
+      for(const other of balls){
+        if(other===ball||!Number.isFinite(other.x)||!Number.isFinite(other.y))continue;
+        if(Math.abs(other.y-BOARD.spawnY)>ball.r+other.r+28)continue;
+        clearance=Math.min(clearance,Math.abs(candidate-other.x)-(ball.r+other.r+8));
+      }
+      if(clearance>bestClearance){bestClearance=clearance;bestX=candidate;}
+      if(clearance>=0)break;
+    }
+    return bestX;
+  }
+
   function resetBallToTop(ball,{keepValue=false,useControls=false,delay=0.08,xOverride=null,returnKick=false}={}){
     if(!keepValue){
       ball.value=chooseValue();ball.loopHits=0;
@@ -962,7 +984,7 @@
     const offsetRangeEl=UI.offsetRange;
     const controlledOffset=useControls&&offsetRangeEl?Number(offsetRangeEl.value)/100*(LV.w*.20):0;
     const randomX=xOverride!==null?xOverride:randomSpawnX()+controlledOffset;
-    ball.x=Math.max(PLAYFIELD.left+ball.r,Math.min(PLAYFIELD.right-ball.r,randomX));
+    ball.x=findClearSpawnX(ball,randomX);
     const driftRangeEl=UI.driftRange;
     const controlledDrift=driftRangeEl?Number(driftRangeEl.value):0;
     ball.y=BOARD.spawnY-(Math.random()*8);
@@ -2780,19 +2802,21 @@
     }
   }
 
-  function drawSectionLabel(text,y,color='#9ad9ff'){
-    const w=Math.max(92,lctx.measureText(text).width+22);
+  function drawZoneRailLabel(code,text,top,bottom,color='#9ad9ff'){
+    const railLeft=6,railRight=PLAYFIELD.left-5;
+    const height=Math.max(16,bottom-top);
     lctx.save();
-    lctx.fillStyle='rgba(4,14,30,.76)';
+    lctx.fillStyle='rgba(4,14,30,.88)';
     lctx.strokeStyle=color;
-    lctx.globalAlpha=.82;
+    lctx.globalAlpha=.72;
     lctx.lineWidth=.9;
-    lctx.beginPath();
-    lctx.moveTo(18,y-12);lctx.lineTo(18+w-7,y-12);lctx.lineTo(18+w,y-5);lctx.lineTo(18+w,y+3);lctx.lineTo(18,y+3);lctx.closePath();
-    lctx.fill();lctx.stroke();
-    lctx.shadowColor=color;lctx.shadowBlur=4;
-    lctx.fillStyle='rgba(227,248,255,.92)';lctx.font='700 10px sans-serif';lctx.textAlign='left';lctx.textBaseline='alphabetic';
-    lctx.fillText(text,27,y-1);
+    lctx.fillRect(railLeft,top,railRight-railLeft,height);
+    lctx.beginPath();lctx.moveTo(railRight,top);lctx.lineTo(railRight,bottom);lctx.stroke();
+    lctx.translate((railLeft+railRight)*.5,top+height*.5);
+    lctx.rotate(-Math.PI*.5);
+    lctx.shadowColor=color;lctx.shadowBlur=3;
+    lctx.fillStyle='rgba(207,237,250,.88)';lctx.font='700 8px "Microsoft YaHei",sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';
+    lctx.fillText(`${code} · ${text}`,0,0);
     lctx.restore();
   }
   function drawLeft(){
@@ -2808,11 +2832,12 @@
     const scan=lctx.createLinearGradient(0,sweep-35,0,sweep+35);scan.addColorStop(0,'transparent');scan.addColorStop(.5,'rgba(42,215,255,.028)');scan.addColorStop(1,'transparent');
     lctx.fillStyle=scan;lctx.fillRect(0,Math.max(0,sweep-35),LV.w,70);
 
-    drawSectionLabel('生成轨道',28,'#24e2ff');
-    drawSectionLabel('上层矩阵',BOARD.upperTop-6,'#4ea8ff');
-    drawSectionLabel('倍率区',BOARD.multTop-8,'#bd4fff');
-    drawSectionLabel('下层矩阵',BOARD.lowerTop-8,'#5e83ff');
-    drawSectionLabel('转换端口',BOARD.convertTop-8,'#27e5ff');
+    // 区域名称进入物理场左侧的独立信息轨道，不再覆盖墙体、弹珠和入口。
+    drawZoneRailLabel('01','生成',MATRIX_TOP_WALL_Y,BOARD.upperTop-12,'#24e2ff');
+    drawZoneRailLabel('02','上层',BOARD.upperTop,BOARD.upperBottom,'#4ea8ff');
+    drawZoneRailLabel('03','倍率',BOARD.multTop,BOARD.multBottom,'#bd4fff');
+    drawZoneRailLabel('04','下层',BOARD.lowerTop,BOARD.lowerBottom,'#5e83ff');
+    drawZoneRailLabel('05','转换',BOARD.convertTop,BOARD.convertBottom,'#27e5ff');
 
     // 生成轨道。
     lctx.save();lctx.setLineDash([8,7]);lctx.strokeStyle='rgba(33,228,255,.75)';lctx.lineWidth=1.4;lctx.shadowColor='#20dfff';lctx.shadowBlur=10;
@@ -2897,8 +2922,7 @@
         }
         lctx.restore();
 
-        drawText(lctx,'UPDRAFT',cell.x+cell.w/2,top+16,{fillStyle:'#d5fbff',font:'800 11px monospace',align:'center',shadowColor:'#49dfff',shadowBlur:5});
-        drawText(lctx,'×8 / 3MIN',cell.x+cell.w/2,bottom-9,{fillStyle:'rgba(159,220,233,.82)',font:'700 8px monospace',align:'center'});
+        drawText(lctx,'↑ FIELD · 8×/180s',cell.x+cell.w/2,bottom-9,{fillStyle:'rgba(184,234,244,.78)',font:'700 7.5px monospace',align:'center',shadowColor:'#49dfff',shadowBlur:2});
         continue;
       }
       const col=cell.mult===8?'#f14aff':cell.mult===4?'#8b5cff':'#2adfff';
@@ -2908,7 +2932,7 @@
       lctx.strokeStyle=colorWithAlpha(col,.72);lctx.lineWidth=1.35;lctx.shadowColor=col;lctx.shadowBlur=5;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.multTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.multTop);lctx.stroke();
       lctx.restore();
-      drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,BOARD.multTop+31,{fillStyle:'#f9fdff',font:'800 18px monospace',align:'center',shadowColor:col,shadowBlur:5});
+      drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-11,{fillStyle:'rgba(242,251,255,.94)',font:'800 12px monospace',align:'center',shadowColor:col,shadowBlur:4});
     }
 
     // v93：参考图式乘区墙。内部墙为双斜面尖顶，左右外墙为单斜切顶；不再使用独立挡板。
@@ -2968,11 +2992,28 @@
       lctx.fillStyle=gradient;lctx.fillRect(cell.left,BOARD.convertTop,cell.right-cell.left,cell.bottom-BOARD.convertTop);
       lctx.strokeStyle=active?colorWithAlpha(col,.82):'rgba(75,112,151,.56)';lctx.lineWidth=active?1.7:1;lctx.shadowColor=col;lctx.shadowBlur=active?7:0;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.convertTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.convertTop);lctx.stroke();
-      if(active){lctx.globalAlpha=.18;lctx.fillStyle=col;lctx.fillRect(cell.left+4,BOARD.convertTop+4,cell.right-cell.left-8,2);}
+      lctx.globalAlpha=active?.22:.10;lctx.fillStyle=active?col:'#69a6c8';lctx.fillRect(cell.left+3,BOARD.convertTop+3,cell.right-cell.left-6,34);
+      lctx.globalAlpha=active?.72:.32;lctx.fillRect(cell.left+3,BOARD.convertTop+37,cell.right-cell.left-6,1);
       lctx.restore();
-      drawText(lctx,WEAPONS[cell.key].icon,cell.x+cell.w/2,BOARD.convertTop+24,{fillStyle:'#f7fdff',font:'800 18px sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?9:4});
-      drawText(lctx,WEAPONS[cell.key].name,cell.x+cell.w/2,BOARD.convertTop+43,{fillStyle:active?'#fff':'#a8bfce',font:'700 10px sans-serif',align:'center'});
-      drawText(lctx,`×${cell.weight}`,cell.x+cell.w/2,cell.bottom-10,{fillStyle:'rgba(126,169,198,.88)',font:'700 10px monospace',align:'center'});
+      drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,cell.x+cell.w/2,BOARD.convertTop+24,{fillStyle:active?'#fff':'rgba(174,203,220,.78)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?6:2});
+      drawText(lctx,`PORT ×${cell.weight}`,cell.x+cell.w/2,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
+    }
+
+    // 命中反馈位于弹珠下层，并裁剪在对应物理区域内，避免扩散圆跨墙或遮住数值。
+    for(const p of pulses){
+      if(p.type!=='convert'&&p.type!=='mult')continue;
+      lctx.save();
+      lctx.beginPath();
+      if(p.type==='mult'){
+        const cell=getMultCell(p.x);
+        lctx.rect(cell.x,BOARD.multTop,cell.w,BOARD.multBottom-BOARD.multTop);
+      }else{
+        const cell=getConverterForX(p.x);
+        lctx.rect(cell.x,BOARD.convertTop,cell.w,BOARD.convertBottom-BOARD.convertTop);
+      }
+      lctx.clip();
+      lctx.globalAlpha=Math.max(0,p.life)*.58;lctx.strokeStyle=p.color;lctx.lineWidth=1.5;lctx.shadowColor=p.color;lctx.shadowBlur=7;
+      lctx.beginPath();lctx.arc(p.x,p.y,p.r,0,TAU);lctx.stroke();lctx.restore();
     }
 
     for(const b of balls){
@@ -2991,11 +3032,6 @@
       drawBallValueLabel(b);
     }
 
-    for(const p of pulses){
-      if(p.type!=='convert'&&p.type!=='mult')continue;
-      lctx.save();lctx.globalAlpha=Math.max(0,p.life);lctx.strokeStyle=p.color;lctx.lineWidth=2.3;lctx.shadowColor=p.color;lctx.shadowBlur=13;
-      lctx.beginPath();lctx.arc(p.x,p.y,p.r,0,TAU);lctx.stroke();lctx.restore();
-    }
   }
   const EFFECT_BATCH_COLORS=[FACTIONS[0].color,FACTIONS[1].color,FACTIONS[2].color,FACTIONS[3].color,'#ffffff'];
   function drawSparkBatch(color){
@@ -3280,6 +3316,7 @@
   log('Demo v70 已启动：累计火力曲线已增加有限值饱和与对数刻度数量限制，修复极大火力导致页面冻结、无法预览的问题。');
   log('Demo v96 已启动：弹珠碰撞启用空间哈希；冲击遮罩加入 LRU；中立网格重置改为批量复制；加入倍率保底和领土密度目标评分。');
   log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
+  log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
