@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v136 · Expanded Orb</title>
+  <title>像素领土战争 Demo v137 · Orb Reactor</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v136</h1>
+        <h1>像素领土战争 · 战场态势 v137</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -2104,6 +2104,7 @@
     p.jitterHeading=0;
     p.id=nextProjectileId++;p.dead=false;p.bounces=0;
     p.orbShieldContacts=0;
+    p.absorbFlashAt=-10;p.absorbAngle=0;p.absorbStrength=0;
     projectiles.push(p);
   }
 
@@ -2267,7 +2268,7 @@
 
   function releaseProjectile(index){
     const p=projectiles[index],last=projectiles.pop();if(index<projectiles.length)projectiles[index]=last;
-    p.kind='';p.firepower=0;p.rounds=0;p.dead=false;p.nominalSpeed=0;p.jitterHeading=0;p.orbShieldContacts=0;projectilePool.push(p);
+    p.kind='';p.firepower=0;p.rounds=0;p.dead=false;p.nominalSpeed=0;p.jitterHeading=0;p.orbShieldContacts=0;p.absorbFlashAt=-10;p.absorbStrength=0;projectilePool.push(p);
   }
 
   function distanceToSegment(px,py,x1,y1,x2,y2){
@@ -2661,6 +2662,30 @@
     if(absorbed<=0)return 0;
 
     const orbBefore=Math.max(1,Math.floor(orb.firepower));
+    const machineSpeed=Math.hypot(machine.vx,machine.vy)||1;
+    const dirX=machine.vx/machineSpeed,dirY=machine.vy/machineSpeed;
+    const trailLength=Math.min(132,52+Math.log2(absorbed+1)*3.2);
+    const sourceHeadX=Number.isFinite(machine.prevX)?machine.prevX:machine.x;
+    const sourceHeadY=Number.isFinite(machine.prevY)?machine.prevY:machine.y;
+    const absorbAngle=Math.atan2(hit.y-orb.y,hit.x-orb.x);
+    orb.absorbFlashAt=simulationElapsed;
+    orb.absorbAngle=absorbAngle;
+    orb.absorbStrength=Math.min(1,.38+Math.log10(absorbed+1)*.075);
+    addEffect({
+      type:'orbAbsorb',
+      sourceX:sourceHeadX-dirX*trailLength,
+      sourceY:sourceHeadY-dirY*trailLength,
+      hitX:hit.x,
+      hitY:hit.y,
+      targetOrb:orb,
+      targetId:orb.id,
+      targetRadius:orb.r,
+      curve:((machine.id&1)?1:-1)*(18+Math.min(44,orb.r*.35)),
+      color:FACTIONS[orb.faction].color,
+      lightColor:mixHexColors(FACTIONS[orb.faction].color,'#ffffff',.72),
+      life:1,
+      decay:1.65
+    });
     // 先按吸收前的大球数值计算动量，随后再把子弹数值并入大球。
     inheritBulletMomentumIntoOrb(orb,machine,absorbed);
     syncProjectileFirepower(orb,orbBefore+absorbed);
@@ -3450,6 +3475,58 @@
     }
     wctx.restore();
   }
+
+  function drawOrbAbsorptionTrails(){
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';wctx.lineJoin='round';
+    for(const effect of pulses){
+      if(effect.type!=='orbAbsorb')continue;
+      const life=Math.max(0,effect.life/(effect.initialLife||1));
+      const progress=1-life;
+      const orb=effect.targetOrb;
+      const targetAlive=orb&&orb.id===effect.targetId&&orb.kind==='orb'&&!orb.dead;
+      const tx=targetAlive?orb.x:effect.hitX,ty=targetAlive?orb.y:effect.hitY;
+      const targetR=targetAlive?orb.r:(effect.targetRadius||8);
+      const sx=effect.sourceX,sy=effect.sourceY;
+      const dx=tx-sx,dy=ty-sy,len=Math.hypot(dx,dy)||1;
+      const mx=(sx+tx)*.5-dy/len*effect.curve,my=(sy+ty)*.5+dx/len*effect.curve;
+      const head=Math.min(1,1-Math.pow(1-Math.min(1,progress*1.55),3));
+      const tail=Math.max(0,head-(.25+.13*life));
+      const traceSegment=()=>{
+        wctx.beginPath();
+        for(let i=0;i<=9;i++){
+          const u=tail+(head-tail)*(i/9),inv=1-u;
+          const x=inv*inv*sx+2*inv*u*mx+u*u*tx;
+          const y=inv*inv*sy+2*inv*u*my+u*u*ty;
+          if(i===0)wctx.moveTo(x,y);else wctx.lineTo(x,y);
+        }
+      };
+      traceSegment();wctx.strokeStyle=effect.color;wctx.globalAlpha=.22*life;wctx.lineWidth=8;wctx.stroke();
+      traceSegment();wctx.strokeStyle=effect.lightColor;wctx.globalAlpha=.92*Math.sin(Math.PI*Math.min(1,progress*1.08));wctx.lineWidth=1.75;wctx.stroke();
+      for(let i=0;i<4;i++){
+        const u=tail+(head-tail)*((i+1)/5),inv=1-u;
+        const px=inv*inv*sx+2*inv*u*mx+u*u*tx;
+        const py=inv*inv*sy+2*inv*u*my+u*u*ty;
+        wctx.globalAlpha=(.34+i*.12)*life;wctx.fillStyle=i===3?'#ffffff':effect.lightColor;
+        wctx.beginPath();wctx.arc(px,py,1.05+i*.24,0,TAU);wctx.fill();
+      }
+      const inv=1-head;
+      const hx=inv*inv*sx+2*inv*head*mx+head*head*tx;
+      const hy=inv*inv*sy+2*inv*head*my+head*head*ty;
+      const headGlow=wctx.createRadialGradient(hx,hy,0,hx,hy,7+targetR*.035);
+      headGlow.addColorStop(0,'rgba(255,255,255,.96)');
+      headGlow.addColorStop(.32,colorWithAlpha(effect.lightColor,.78));
+      headGlow.addColorStop(1,colorWithAlpha(effect.color,0));
+      wctx.globalAlpha=Math.min(1,life*1.8);wctx.fillStyle=headGlow;wctx.beginPath();wctx.arc(hx,hy,7+targetR*.035,0,TAU);wctx.fill();
+      if(progress>.48){
+        const collapse=Math.min(1,(progress-.48)/.52);
+        const ringR=targetR*(1.26-collapse*.78);
+        wctx.globalAlpha=(1-collapse)*.76;wctx.strokeStyle=effect.lightColor;wctx.lineWidth=1.5+life*1.8;
+        wctx.beginPath();wctx.arc(tx,ty,Math.max(3,ringR),0,TAU);wctx.stroke();
+      }
+    }
+    wctx.restore();
+  }
+
   function drawWar(){
     wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);wctx.clearRect(0,0,WV.w,WV.h);
     const t=performance.now()/1000;
@@ -3512,82 +3589,92 @@
     }
     wctx.restore();
 
-    // v103：保留参考图的柔和雾面质感，但把主体渐变改为基于各阵营主色生成。
+    drawOrbAbsorptionTrails();
+
+    // v137：参考能量核心视觉，使用阵营色构建高亮核心、双层能量环、旋转弧段和轨道粒子。
     wctx.save();
     const drawOrbProjectile=orb=>{
       const factionColor=FACTIONS[orb.faction].color;
-      const pulse=.5+.5*Math.sin(t*1.5+orb.id*.31);
+      const pulse=.5+.5*Math.sin(t*2.15+orb.id*.31);
       const r=orb.r;
-      const haloR=r*(1.58+.06*pulse);
-      const glowAlpha=.13+.05*pulse;
-      const hiColor=mixHexColors(factionColor,'#ffffff',.72);
-      const softColor=mixHexColors(factionColor,'#f5ecff',.42);
-      const deepColor=mixHexColors(factionColor,'#1a2336',.34);
+      const absorbAge=Math.max(0,simulationElapsed-(orb.absorbFlashAt||-10));
+      const absorbFlash=Math.max(0,1-absorbAge/.46)*(orb.absorbStrength||0);
+      const haloR=r*(1.43+.045*pulse+.10*absorbFlash);
+      const orbitR=r*(1.12+.025*pulse);
+      const hiColor=mixHexColors(factionColor,'#ffffff',.76);
+      const hotColor=mixHexColors(factionColor,'#fff4c9',.48);
+      const deepColor=mixHexColors(factionColor,'#020814',.58);
 
-      // 外围弱辉光：完全围绕阵营色展开。
+      // 外围柔光为装饰层，主体半径仍与物理碰撞半径严格一致。
       wctx.save();
-      wctx.globalCompositeOperation='screen';
-      let outerGlow=wctx.createRadialGradient(orb.x,orb.y,r*.22,orb.x,orb.y,haloR);
-      outerGlow.addColorStop(0,'rgba(255,255,255,.05)');
-      outerGlow.addColorStop(.3,colorWithAlpha(hiColor,glowAlpha*.75));
-      outerGlow.addColorStop(.64,colorWithAlpha(factionColor,glowAlpha*.95));
-      outerGlow.addColorStop(1,'rgba(255,255,255,0)');
-      wctx.fillStyle=outerGlow;
-      wctx.globalAlpha=.95;
+      wctx.globalCompositeOperation='lighter';
+      const outerGlow=wctx.createRadialGradient(orb.x,orb.y,r*.56,orb.x,orb.y,haloR);
+      outerGlow.addColorStop(0,colorWithAlpha(hiColor,.03+.06*absorbFlash));
+      outerGlow.addColorStop(.48,colorWithAlpha(factionColor,.10+.08*pulse+.16*absorbFlash));
+      outerGlow.addColorStop(.76,colorWithAlpha(factionColor,.07+.08*absorbFlash));
+      outerGlow.addColorStop(1,colorWithAlpha(factionColor,0));
+      wctx.fillStyle=outerGlow;wctx.globalAlpha=1;
       wctx.beginPath();wctx.arc(orb.x,orb.y,haloR,0,TAU);wctx.fill();
+
+      // 旋转断续外环。
+      const spin=(orb.faction&1?-1:1)*(t*.42+orb.id*.073);
+      wctx.strokeStyle=hiColor;wctx.lineCap='round';
+      for(let i=0;i<8;i++){
+        const a=spin+i*TAU/8;
+        wctx.globalAlpha=.16+.18*((i+orb.id)%3===0)+.12*absorbFlash;
+        wctx.lineWidth=Math.max(.7,Math.min(2.2,r*.025));
+        wctx.beginPath();wctx.arc(orb.x,orb.y,orbitR,a,a+.25+.08*(i%2));wctx.stroke();
+      }
+
+      // 轨道粒子节点。
+      const moteCount=r<8?6:12;
+      for(let i=0;i<moteCount;i++){
+        const a=spin*(i%2?.82:-.54)+i*TAU/moteCount+orb.id*.19;
+        const rr=orbitR*(.97+(i%3)*.035);
+        const mx=orb.x+Math.cos(a)*rr,my=orb.y+Math.sin(a)*rr;
+        const mr=Math.max(.65,Math.min(2.7,r*(.013+.005*(i%3))));
+        wctx.globalAlpha=.32+.42*((i+orb.id)%4===0)+.20*absorbFlash;
+        wctx.fillStyle=(i+orb.id)%4===0?'#ffffff':hiColor;
+        wctx.beginPath();wctx.arc(mx,my,mr,0,TAU);wctx.fill();
+      }
       wctx.restore();
 
-      // 主体：由阵营色推导出的明-中-暗渐变。
+      // 主体能量壳：中心高亮、边缘深色，形成参考图的压缩能量球体感。
       wctx.save();
       wctx.globalCompositeOperation='source-over';
-      let baseGrad=wctx.createRadialGradient(orb.x-r*.18,orb.y-r*.26,r*.08,orb.x,orb.y,r);
-      baseGrad.addColorStop(0,'rgba(255,255,255,.90)');
-      baseGrad.addColorStop(.18,colorWithAlpha(hiColor,.84));
-      baseGrad.addColorStop(.48,colorWithAlpha(softColor,.74));
-      baseGrad.addColorStop(.78,colorWithAlpha(factionColor,.56));
-      baseGrad.addColorStop(1,colorWithAlpha(deepColor,.34));
-      wctx.fillStyle=baseGrad;
-      wctx.globalAlpha=.98;
+      const shell=wctx.createRadialGradient(orb.x-r*.18,orb.y-r*.22,0,orb.x,orb.y,r);
+      shell.addColorStop(0,colorWithAlpha('#ffffff',.98));
+      shell.addColorStop(.11,colorWithAlpha(hotColor,.98));
+      shell.addColorStop(.36,colorWithAlpha(hiColor,.94));
+      shell.addColorStop(.67,colorWithAlpha(factionColor,.92));
+      shell.addColorStop(.88,colorWithAlpha(deepColor,.96));
+      shell.addColorStop(1,colorWithAlpha('#01040b',.98));
+      wctx.fillStyle=shell;wctx.globalAlpha=1;
       wctx.beginPath();wctx.arc(orb.x,orb.y,r,0,TAU);wctx.fill();
 
-      // 亮面体积层。
-      wctx.globalCompositeOperation='screen';
-      let lightGrad=wctx.createRadialGradient(orb.x-r*.33,orb.y-r*.12,0,orb.x-r*.16,orb.y-r*.05,r*.9);
-      lightGrad.addColorStop(0,'rgba(255,255,255,.34)');
-      lightGrad.addColorStop(.28,colorWithAlpha(hiColor,.22));
-      lightGrad.addColorStop(1,colorWithAlpha(hiColor,0));
-      wctx.fillStyle=lightGrad;
-      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.98,0,TAU);wctx.fill();
-
-      // 深色体积层。
-      let volumeGrad=wctx.createRadialGradient(orb.x+r*.18,orb.y+r*.03,0,orb.x+r*.12,orb.y+r*.08,r*.88);
-      volumeGrad.addColorStop(0,colorWithAlpha(factionColor,.10));
-      volumeGrad.addColorStop(.42,colorWithAlpha(deepColor,.24));
-      volumeGrad.addColorStop(1,colorWithAlpha(deepColor,0));
-      wctx.fillStyle=volumeGrad;
-      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.96,0,TAU);wctx.fill();
-
-      // 雾化层。
+      // 双层能量环与内核。
       wctx.globalCompositeOperation='lighter';
-      let mistGrad=wctx.createRadialGradient(orb.x-r*.08,orb.y-r*.14,0,orb.x,orb.y,r*.96);
-      mistGrad.addColorStop(0,'rgba(255,255,255,.10)');
-      mistGrad.addColorStop(.55,colorWithAlpha(hiColor,.04));
-      mistGrad.addColorStop(1,'rgba(255,255,255,0)');
-      wctx.fillStyle=mistGrad;
-      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.97,0,TAU);wctx.fill();
+      wctx.strokeStyle=factionColor;wctx.globalAlpha=.54+.18*pulse+.22*absorbFlash;wctx.lineWidth=Math.max(1.2,Math.min(5,r*.055));
+      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.97,0,TAU);wctx.stroke();
+      wctx.strokeStyle=hiColor;wctx.globalAlpha=.58+.24*absorbFlash;wctx.lineWidth=Math.max(.7,Math.min(2.2,r*.022));
+      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.84,0,TAU);wctx.stroke();
+      wctx.globalAlpha=.28+.10*pulse;wctx.lineWidth=Math.max(.55,Math.min(1.4,r*.014));
+      wctx.beginPath();wctx.arc(orb.x,orb.y,r*.63,0,TAU);wctx.stroke();
 
-      // 左上高光。
-      wctx.globalCompositeOperation='source-over';
-      wctx.translate(orb.x-r*.24,orb.y-r*.19);
-      wctx.rotate(-.62);
-      wctx.fillStyle='rgba(255,255,255,.28)';
-      wctx.beginPath();
-      wctx.ellipse(0,0,Math.max(2,r*.23),Math.max(1.2,r*.1),0,0,TAU);
-      wctx.fill();
-      wctx.fillStyle=colorWithAlpha(hiColor,.12);
-      wctx.beginPath();
-      wctx.ellipse(r*.1,r*.02,Math.max(1.2,r*.11),Math.max(.8,r*.045),0,0,TAU);
-      wctx.fill();
+      const coreR=Math.max(2.5,r*.43);
+      const core=wctx.createRadialGradient(orb.x-r*.08,orb.y-r*.1,0,orb.x,orb.y,coreR);
+      core.addColorStop(0,colorWithAlpha('#ffffff',.56+.20*absorbFlash));
+      core.addColorStop(.28,colorWithAlpha(hiColor,.46));
+      core.addColorStop(.72,colorWithAlpha(factionColor,.22));
+      core.addColorStop(1,colorWithAlpha(deepColor,0));
+      wctx.fillStyle=core;wctx.globalAlpha=1;wctx.beginPath();wctx.arc(orb.x,orb.y,coreR,0,TAU);wctx.fill();
+
+      // 吸收瞬间在命中方向出现局部白热弧。
+      if(absorbFlash>0){
+        const a=orb.absorbAngle||0;
+        wctx.strokeStyle='#ffffff';wctx.globalAlpha=.84*absorbFlash;wctx.lineWidth=Math.max(1.2,Math.min(6,r*.06));
+        wctx.beginPath();wctx.arc(orb.x,orb.y,r*1.015,a-.32,a+.32);wctx.stroke();
+      }
       wctx.restore();
     };
     for(const p of projectiles){if(p.kind==='orb')drawOrbProjectile(p);}
@@ -3616,7 +3703,7 @@
     wctx.save();wctx.globalCompositeOperation='source-over';wctx.textAlign='center';wctx.textBaseline='middle';wctx.lineJoin='round';
     for(const p of projectiles){
       if(p.kind!=='orb'||p.firepower<=0)continue;
-      const label=formatNum(p.firepower),fontSize=Math.max(7,Math.min(15,p.r*.38)),labelY=p.r>=9?p.y:p.y-p.r-5;
+      const label=formatNum(p.firepower),fontSize=Math.max(8,Math.min(30,p.r*.34)),labelY=p.r>=9?p.y:p.y-p.r-5;
       wctx.font=`800 ${fontSize}px monospace`;wctx.lineWidth=Math.max(2,fontSize*.24);wctx.strokeStyle='rgba(0,5,14,.92)';wctx.globalAlpha=.96;wctx.strokeText(label,p.x,labelY);
       wctx.fillStyle='#eefbff';wctx.fillText(label,p.x,labelY);
     }
@@ -3730,6 +3817,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v137 已启动：大球采用高亮能量核心、双层环、旋转弧段和阵营色轨道粒子；吸收己方机枪弹时播放弧线汇入、收束光点、内缩环与局部白热弧动画。');
   log('Demo v136 已启动：大球饱和直径上限由 250px 提高到 400px；火力兑现端口达到 1:1:1:1:1 的线性过渡时间由 15 分钟延长到 20 分钟。');
   log('Demo v135 已启动：五个火力兑现端口从开局 0:1:1:1:0 线性过渡，在模拟 15:00 达到 1:1:1:1:1 后固定；物理边界、命中归属与标签同步更新。');
   log('Demo v134 已启动：领土亮度更新提高到每秒 10 次；外圈转盘碰撞点与弹珠进行双向角动量交换，转盘受击后由驱动力平滑回归基础转速。');
