@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v138 · Performance Core</title>
+  <title>像素领土战争 Demo v139 · Lossless Hotpaths</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -411,7 +411,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v138</h1>
+        <h1>像素领土战争 · 战场态势 v139</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -732,12 +732,14 @@
   // 真实 1000 × 1000 格：每个逻辑方格对应战场中的一个像素单元。
   const GRID_W=1000, GRID_H=1000;
   const owner=new Uint8Array(GRID_W*GRID_H);
-  const territoryCapturedAt=new Float32Array(GRID_W*GRID_H);
+  const territoryCapturedTick=new Uint32Array(GRID_W*GRID_H);
   const territoryFadeTracked=new Uint8Array(GRID_W*GRID_H);
   const territoryFlashTracked=new Uint8Array(GRID_W*GRID_H);
   const fadingTerritoryCells=[];
   const flashingTerritoryCells=[];
+  const territoryRefreshStamp=new Uint32Array(GRID_W*GRID_H);
   const territoryCounts=new Uint32Array(4);
+  let territoryRefreshStepId=0;
 
   // 离屏领土画布：占领发生时只更新对应像素，不在每一帧遍历 100 万格。
   const territoryCanvas=document.createElement('canvas');
@@ -810,6 +812,7 @@
   const renderOrbProjectiles=[],renderOtherProjectiles=[],renderMachineProjectiles=[];
   const renderOtherProjectilesByFaction=Array.from({length:FACTIONS.length},()=>[]);
   const renderMachineProjectilesByFaction=Array.from({length:FACTIONS.length},()=>[]);
+  const PROJECTILE_COLLISION_KIND=Object.freeze({OTHER:0,MACHINE:1,ORB:2});
   const projectileRenderPalette=FACTIONS.map(f=>({
     machineNode:mixHexColors(f.color,'#ffffff',.42),
     machineSpark:mixHexColors(f.color,'#ffffff',.60),
@@ -1156,7 +1159,8 @@
   }
 
   function resetTerritory(){
-    owner.fill(255);territoryCapturedAt.fill(0);territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;territoryCounts.fill(0);
+    owner.fill(255);territoryCapturedTick.fill(0);territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);territoryRefreshStamp.fill(0);fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;territoryCounts.fill(0);
+    territoryRefreshStepId=0;
     territoryPixels.set(neutralTerritoryPixels);
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
@@ -1170,16 +1174,15 @@
     }
   }
 
-  function writeTerritoryAgeColor(cellIndex,faction,age){
-    const tick=Math.max(0,Math.min(TERRITORY_COLOR_TICK_COUNT-1,Math.round(age*TERRITORY_COLOR_TICK_HZ)));
+  function writeTerritoryAgeColorTick(cellIndex,faction,tick){
+    tick=Math.max(0,Math.min(TERRITORY_COLOR_TICK_COUNT-1,tick|0));
     const color=territoryAgeColorLUT[faction][tick];
     if(territoryPixelWords[cellIndex]===color)return false;
     territoryPixelWords[cellIndex]=color;
     return true;
   }
-
   function updateTerritoryBrightness(){
-    let changed=false;
+    let changed=false;const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
     for(let i=fadingTerritoryCells.length-1;i>=0;i--){
       const cellIndex=fadingTerritoryCells[i],faction=owner[cellIndex];
       if(faction===255){
@@ -1187,9 +1190,9 @@
         const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
         continue;
       }
-      const age=Math.max(0,simulationElapsed-territoryCapturedAt[cellIndex]);
-      if(writeTerritoryAgeColor(cellIndex,faction,age))changed=true;
-      if(age>=TERRITORY_FADE_DURATION+TERRITORY_FLASH_DURATION){
+      const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
+      if(writeTerritoryAgeColorTick(cellIndex,faction,ageTick))changed=true;
+      if(ageTick>=TERRITORY_COLOR_TICK_COUNT-1){
         territoryFadeTracked[cellIndex]=0;
         const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
       }
@@ -1201,6 +1204,7 @@
   }
 
   function updateTerritoryFlash(){
+    const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
     for(let i=flashingTerritoryCells.length-1;i>=0;i--){
       const cellIndex=flashingTerritoryCells[i],faction=owner[cellIndex];
       if(faction===255){
@@ -1208,12 +1212,12 @@
         const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
         continue;
       }
-      const age=Math.max(0,simulationElapsed-territoryCapturedAt[cellIndex]);
-      if(writeTerritoryAgeColor(cellIndex,faction,age)){
+      const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
+      if(writeTerritoryAgeColorTick(cellIndex,faction,ageTick)){
         const x=cellIndex%GRID_W,y=(cellIndex/GRID_W)|0,tileIndex=(y>>5)*TERRITORY_TILE_COLS+(x>>5);
         if(!dirtyTerritoryTiles[tileIndex]){dirtyTerritoryTiles[tileIndex]=1;dirtyTerritoryTileCount++;}
       }
-      if(age>=TERRITORY_FLASH_DURATION){
+      if(ageTick>=Math.round(TERRITORY_FLASH_DURATION*TERRITORY_COLOR_TICK_HZ)){
         territoryFlashTracked[cellIndex]=0;
         const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
       }
@@ -2122,6 +2126,7 @@
     p.x=sx;p.y=sy;p.prevX=sx;p.prevY=sy;p.paintX=sx;p.paintY=sy;
     p.vx=dx/len*sp;p.vy=dy/len*sp;
     p.targetX=tx;p.targetY=ty;p.faction=d.faction;p.kind=d.kind;
+    p.collisionKind=d.kind==='orb'?PROJECTILE_COLLISION_KIND.ORB:d.kind==='machine'?PROJECTILE_COLLISION_KIND.MACHINE:PROJECTILE_COLLISION_KIND.OTHER;
     p.power=power;p.initialFirepower=firepower;p.firepower=firepower;
     p.rounds=d.rounds||firepower;p.visualPellets=d.kind==='machine'?1:(d.visualPellets||1);p.visualSeed=d.visualSeed??machineShotIndex[d.faction]??0;
     // 大球使用当前剩余火力计算动态半径；其他弹丸保持既有尺寸。
@@ -2149,10 +2154,14 @@
   }
 
   function refreshTerritoryCell(idx,faction,capturedTime=simulationElapsed){
-    territoryCapturedAt[idx]=capturedTime;
+    const refreshToken=(Math.imul(territoryRefreshStepId,4)+faction+1)>>>0;
+    if(territoryRefreshStamp[idx]===refreshToken)return false;
+    territoryRefreshStamp[idx]=refreshToken;
+    territoryCapturedTick[idx]=Math.max(0,Math.round(capturedTime*TERRITORY_COLOR_TICK_HZ));
     if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
     if(!territoryFlashTracked[idx]){territoryFlashTracked[idx]=1;flashingTerritoryCells.push(idx);}
-    writeTerritoryAgeColor(idx,faction,0);
+    writeTerritoryAgeColorTick(idx,faction,0);
+    return true;
   }
 
   function paintTerritoryCell(x,y,faction,refreshOwned=false){
@@ -2211,8 +2220,16 @@
     const requireRadialOrder=budget<(limEstimate*2+1)*(limEstimate*2+1);
     const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy,requireRadialOrder);let changed=0,refreshed=false;
     for(let i=0;i<mask.length&&changed<budget;i+=2){
-      const result=paintTerritoryCell(baseX+mask[i],baseY+mask[i+1],faction,refreshOwned);
-      if(result===1)changed++;else if(result===2)refreshed=true;
+      const x=baseX+mask[i],y=baseY+mask[i+1];
+      if(x<0||x>=GRID_W||y<0||y>=GRID_H)continue;
+      const idx=y*GRID_W+x,previous=owner[idx];
+      if(previous===faction){
+        if(!refreshOwned)continue;
+        refreshTerritoryCell(idx,faction);refreshed=true;
+        continue;
+      }
+      if(previous!==255)territoryCounts[previous]--;
+      territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;
     }
     if(changed||refreshed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
     return changed;
@@ -2597,6 +2614,7 @@
   }
 
   function projectileCollisionRadius(p){return p.r;}
+  const projectilePairHitResult={t:0,x:0,y:0,ax:0,ay:0,bx:0,by:0};
 
   function sweptProjectilePairHit(a,b){
     const r=projectileCollisionRadius(a)+projectileCollisionRadius(b);
@@ -2615,7 +2633,9 @@
     if(t===null)return null;
     const ax=a.prevX+(a.x-a.prevX)*t,ay=a.prevY+(a.y-a.prevY)*t;
     const bx=b.prevX+(b.x-b.prevX)*t,by=b.prevY+(b.y-b.prevY)*t;
-    return {t,x:(ax+bx)*.5,y:(ay+by)*.5,ax,ay,bx,by};
+    projectilePairHitResult.t=t;projectilePairHitResult.x=(ax+bx)*.5;projectilePairHitResult.y=(ay+by)*.5;
+    projectilePairHitResult.ax=ax;projectilePairHitResult.ay=ay;projectilePairHitResult.bx=bx;projectilePairHitResult.by=by;
+    return projectilePairHitResult;
   }
 
   function orbCollisionMass(p){return Math.max(1,p.r*p.r);}
@@ -2755,16 +2775,17 @@
   function resolveProjectilePairInteraction(p,q){
     if(q.dead||q.firepower<=0)return false;
     const sameFaction=q.faction===p.faction;
-    const bothOrbs=p.kind==='orb'&&q.kind==='orb';
-    const friendlyOrbMachine=sameFaction&&((p.kind==='orb'&&q.kind==='machine')||(p.kind==='machine'&&q.kind==='orb'));
+    const pKind=p.collisionKind,qKind=q.collisionKind;
+    const bothOrbs=pKind===PROJECTILE_COLLISION_KIND.ORB&&qKind===PROJECTILE_COLLISION_KIND.ORB;
+    const friendlyOrbMachine=sameFaction&&pKind+qKind===PROJECTILE_COLLISION_KIND.ORB+PROJECTILE_COLLISION_KIND.MACHINE&&pKind!==qKind;
     const friendlyOrbPair=sameFaction&&bothOrbs;
     if(sameFaction&&!friendlyOrbMachine&&!friendlyOrbPair)return false;
 
     const hit=sweptProjectilePairHit(p,q);if(!hit)return false;
 
     if(friendlyOrbMachine){
-      const orb=p.kind==='orb'?p:q;
-      const machine=p.kind==='machine'?p:q;
+      const orb=pKind===PROJECTILE_COLLISION_KIND.ORB?p:q;
+      const machine=pKind===PROJECTILE_COLLISION_KIND.MACHINE?p:q;
       absorbFriendlyMachineIntoOrb(orb,machine,hit);
     }else if(bothOrbs){
       const lo=Math.min(p.id,q.id),hi=Math.max(p.id,q.id),key=`${lo}:${hi}`;
@@ -2781,8 +2802,8 @@
       const consumed=Math.min(Math.floor(p.firepower),Math.floor(q.firepower));
       if(consumed<=0)return false;
       // 敌方普通子弹撞击大球时，大球沿子弹来向继承微小动量。
-      if(p.kind==='orb')inheritBulletMomentumIntoOrb(p,q,consumed);
-      else if(q.kind==='orb')inheritBulletMomentumIntoOrb(q,p,consumed);
+      if(pKind===PROJECTILE_COLLISION_KIND.ORB)inheritBulletMomentumIntoOrb(p,q,consumed);
+      else if(qKind===PROJECTILE_COLLISION_KIND.ORB)inheritBulletMomentumIntoOrb(q,p,consumed);
       syncProjectileFirepower(p,p.firepower-consumed);
       syncProjectileFirepower(q,q.firepower-consumed);
       spawnAnnihilationEffects(hit.x,hit.y,p,q,consumed);
@@ -2823,7 +2844,7 @@
         }
       }
       if(!p.dead){
-        if(p.kind==='orb'){
+        if(p.collisionKind===PROJECTILE_COLLISION_KIND.ORB){
           activeOrbCollisionProjectiles.push(p);
         }else{
           const radius=projectileCollisionRadius(p);
@@ -3816,6 +3837,8 @@
   }
   let lastLeftDraw=0,renderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
   function simulateStep(dt){
+    territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
+    if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
     simulationElapsed+=dt;
     updateConverterLayout(simulationElapsed);
     updateBalls(dt);updateWar(dt);
@@ -3901,6 +3924,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v139 已启动：同物理步领土刷新去重；占领热路径内联；弹丸碰撞复用命中缓冲并缓存数值类型；亮度与视觉参数保持 v138 一致。');
   log('Demo v138 已启动：大球与普通弹丸采用分层空间碰撞；领土衰减改为无损 RGBA 查表；战场弹丸按弹种与阵营一次分类后批量绘制；完整冲击圆跳过无意义排序。');
   log('Demo v137 已启动：大球采用高亮能量核心、双层环、旋转弧段和阵营色轨道粒子；吸收己方机枪弹时播放弧线汇入、收束光点、内缩环与局部白热弧动画。');
   log('Demo v136 已启动：大球饱和直径上限由 250px 提高到 400px；火力兑现端口达到 1:1:1:1:1 的线性过渡时间由 15 分钟延长到 20 分钟。');
