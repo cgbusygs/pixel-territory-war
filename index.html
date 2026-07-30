@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v126 · Faction-Hued Bullet Heads</title>
+  <title>像素领土战争 Demo v127 · Fiber-Node Bullets</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v126</h1>
+        <h1>像素领土战争 · 战场态势 v127</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -3315,7 +3315,7 @@
       let count=0;wctx.beginPath();
       for(const p of projectiles){
         if(p.kind!=='machine'||!isOccupiedWarPoint(p.x,p.y))continue;
-        const speed=Math.hypot(p.vx,p.vy)||1,tailLength=18;
+        const speed=Math.hypot(p.vx,p.vy)||1,tailLength=64+(p.id%7)*5;
         const x1=p.x-p.vx/speed*tailLength,y1=p.y-p.vy/speed*tailLength;
         if(!isOccupiedWarPoint(x1,y1)||!isOccupiedWarPoint((x1+p.x)*.5,(y1+p.y)*.5))continue;
         wctx.moveTo(x1,y1);wctx.lineTo(p.x,p.y);count++;
@@ -3323,8 +3323,8 @@
       if(count){wctx.globalAlpha=alpha;wctx.lineWidth=width;wctx.strokeStyle=color;wctx.stroke();}
     };
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';wctx.lineJoin='round';
-    strokeMachineVelocityTails(3.2,.10,'#0064c8');
-    strokeMachineVelocityTails(.82,.68,'#83d7ff');
+    strokeMachineVelocityTails(1.6,.045,'#0b63b3');
+    strokeMachineVelocityTails(.42,.36,'#42b2ff');
     wctx.restore();
 
     wctx.save();wctx.globalCompositeOperation='lighter';
@@ -3333,17 +3333,17 @@
       let hasMachineHalo=false;wctx.beginPath();
       for(const p of projectiles){
         if(p.kind!=='machine'||p.faction!==f||!isOccupiedWarPoint(p.x,p.y))continue;
-        const r=Math.max(4.4,p.r*.82);
+        const r=Math.max(3.2,p.r*.62);
         wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineHalo=true;
       }
-      if(hasMachineHalo){wctx.globalAlpha=.26;wctx.fillStyle=factionColor;wctx.fill();}
+      if(hasMachineHalo){wctx.globalAlpha=.16;wctx.fillStyle=factionColor;wctx.fill();}
       let hasMachineNode=false;wctx.beginPath();
       for(const p of projectiles){
         if(p.kind!=='machine'||p.faction!==f||!isOccupiedWarPoint(p.x,p.y))continue;
-        const r=Math.max(2.2,p.r*.48);
+        const r=Math.max(1.45,p.r*.34);
         wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineNode=true;
       }
-      if(hasMachineNode){wctx.globalAlpha=.76;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.38);wctx.fill();}
+      if(hasMachineNode){wctx.globalAlpha=.92;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.50);wctx.fill();}
     }
     wctx.restore();
 
@@ -3441,10 +3441,10 @@
       let hasMachineCore=false;wctx.beginPath();
       for(const p of projectiles){
         if(p.kind!=='machine'||p.faction!==f||!isOccupiedWarPoint(p.x,p.y))continue;
-        const r=Math.max(.72,p.r*.25);
+        const r=Math.max(.55,p.r*.16);
         wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineCore=true;
       }
-      if(hasMachineCore){wctx.globalAlpha=.98;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.78);wctx.fill();}
+      if(hasMachineCore){wctx.globalAlpha=1;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.86);wctx.fill();}
     }
     wctx.restore();
 
@@ -3564,7 +3564,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
-  log('Demo v126 已启动：机枪弹头恢复三层辉光并使用各阵营色相；占领色亮度降至约 72%，实时速度尾光逻辑保持不变。');
+  log('Demo v127 已启动：机枪弹改为细暗光纤尾迹与微型高亮节点；尾迹仍严格绑定当前弹丸的位置和速度。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
