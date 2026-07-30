@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v110 · Cleaner Generator Matrix</title>
+  <title>像素领土战争 Demo v111 · Matrix UI & Collision Pass</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -109,6 +109,13 @@
     .panel-title::before{content:"";width:9px;height:9px;border:1px solid var(--panel-accent,#20dfff);transform:rotate(45deg);box-shadow:0 0 9px var(--panel-accent,#20dfff)}
     .panel-title::after{content:"///";font-size:14px;letter-spacing:2px;color:var(--panel-accent,#20dfff);opacity:.82}
     .panel-note{font-size:11px;color:#718ca6;letter-spacing:.035em;text-align:right}
+    .matrix-panel-head{display:grid;grid-template-columns:1fr;gap:8px;align-items:start;min-height:74px;padding:3px 7px 9px}
+    .matrix-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+    .matrix-panel-head .panel-title{white-space:nowrap;font-family:"Bahnschrift Condensed","Microsoft YaHei",sans-serif}
+    .panel-index{flex:0 0 auto;font:700 9px/1 monospace;letter-spacing:.16em;color:#76a9c7;padding:4px 7px;border:1px solid rgba(66,160,219,.34);background:rgba(8,25,43,.72);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px))}
+    .matrix-rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;min-width:0}
+    .matrix-rule{min-width:0;display:flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid rgba(62,132,183,.32);background:linear-gradient(90deg,rgba(18,73,106,.22),rgba(4,17,32,.78));font:700 9px/1.15 "Microsoft YaHei",sans-serif;letter-spacing:.04em;color:#9fc2d8;white-space:nowrap;overflow:hidden}
+    .matrix-rule b{flex:0 0 auto;color:#25e3ff;font:800 8px/1 monospace;letter-spacing:.08em}
     .canvas-wrap{
       position:relative;border:1px solid rgba(42,112,178,.56);background:#010611;overflow:hidden;min-height:0;
       box-shadow:inset 0 0 48px rgba(15,83,160,.20),0 0 12px rgba(19,102,208,.08);
@@ -136,6 +143,7 @@
     canvas{display:block}
     #leftCanvas{width:100%;height:100%;aspect-ratio:1.02/1}
     .generator-wrap{flex:1 1 auto; min-height:0}
+    .generator-wrap .canvas-code{display:none}
     #warCanvas{width:auto;height:100%;max-width:100%;aspect-ratio:1/1;margin:0 auto}
     .war-wrap{flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center}
     .core-label{
@@ -197,8 +205,10 @@
     .boot-notice.error{border-color:rgba(255,82,105,.8);color:#ffdce2}
     .boot-notice.hidden{display:none}
 
-    @media(max-width:1120px){.stage-169{width:min(100%,calc((100vh - var(--stage-pad))*16/9))}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}}
-    @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:6px}}
+    @media(max-width:1120px){.stage-169{width:min(100%,calc((100vh - var(--stage-pad))*16/9))}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}.panel-head:not(.matrix-panel-head) .panel-title::after{display:none}.panel-note{max-width:55%;line-height:1.35}}
+    @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:5/8;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
+    @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
+    @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:5/8}}
   </style>
 </head>
 <body>
@@ -208,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v110</h1>
+        <h1>像素领土战争 · 战场态势 v111</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -258,9 +268,16 @@
   <div class="stage-169">
   <main class="layout">
     <section class="panel panel-left">
-      <div class="panel-head">
-        <div class="panel-title">火力生成矩阵</div>
-        <div class="panel-note">倍率盒顶部开放，侧壁反弹，只有触碰底板才结算倍乘</div>
+      <div class="panel-head matrix-panel-head">
+        <div class="matrix-heading">
+          <div class="panel-title">火力生成矩阵</div>
+          <span class="panel-index">MATRIX / 01</span>
+        </div>
+        <div class="matrix-rules" aria-label="矩阵碰撞规则">
+          <span class="matrix-rule"><b>01</b>顶边回弹</span>
+          <span class="matrix-rule"><b>02</b>侧壁对称反弹</span>
+          <span class="matrix-rule"><b>03</b>触底结算</span>
+        </div>
       </div>
       <div class="canvas-wrap generator-wrap"><span class="canvas-code">BALLISTIC MATRIX // 01</span><canvas id="leftCanvas"></canvas></div>
 
@@ -369,7 +386,9 @@
     }),
     collision:Object.freeze({
       ballHashCell:64,             // 大于当前最大弹珠直径 50px，邻格查询即可覆盖碰撞
-      ballPasses:2,                // 重叠修正次数，保持原有碰撞稳定性
+      ballPasses:3,                // 多轮位置修正，降低拥挤区残余重叠
+      maxSubsteps:4,               // 移动端或高速状态下增加物理微步，避免穿透
+      maxTravelPerStep:5,          // 单微步最大位移，低于最小弹珠半径
       normalRestitution:.90,
       congestedRestitution:.68
     }),
@@ -622,12 +641,12 @@
   // v67：转盘轨道在 v66 当前基础上再放大到 110%，转速提升到当前的 150%，碰撞点半径保持原值。
   const PEG_DISC_ORBIT_RADIUS=123.552;
   const PEG_DISC_SPIN_SPEED=3.15;
-  // v68：在火力生成矩阵左右侧加入反弹壁；触壁时额外施加当前速度 2 倍的水平向左冲量。
-  const MATRIX_SIDE_WALL_KICK_MULT=2;
+  // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
+  const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
   const MATRIX_SIDE_WALL_RELEASE=18;
   // v74：侧壁反弹后的合速度上限，接近小球从矩阵顶部自然下落到底部的速度量级。
-  const MATRIX_SIDE_WALL_MAX_SPEED=1100;
+  const MATRIX_SIDE_WALL_MAX_SPEED=980;
 
   function updateRotorPegPositions(rotor){
     for(const peg of rotor.pegs){
@@ -1008,9 +1027,17 @@
     const dx=b.x-a.x,dy=b.y-a.y;
     const minDist=a.r+b.r;
     const distSq=dx*dx+dy*dy;
-    if(distSq<=0.0001||distSq>=minDist*minDist)return;
-    const dist=Math.sqrt(distSq);
-    const nx=dx/dist,ny=dy/dist;
+    if(distSq>=minDist*minDist)return;
+    let dist,nx,ny;
+    if(distSq<=0.0001){
+      // 完全同心时也必须拆开；使用球身份生成稳定法线，避免随机抖动。
+      const seed=(a.faction*17+a.slot*31+b.faction*47+b.slot*59+1)%360;
+      const angle=seed*Math.PI/180;
+      nx=Math.cos(angle);ny=Math.sin(angle);dist=0;
+    }else{
+      dist=Math.sqrt(distSq);
+      nx=dx/dist;ny=dy/dist;
+    }
     const overlap=minDist-dist;
     const massA=a.r*a.r,massB=b.r*b.r,totalMass=massA+massB;
     a.x-=nx*overlap*(massB/totalMass);
@@ -1251,7 +1278,8 @@
     }
     if(touched){
       if(ball.sideWallKickCooldown<=0||ball.sideWallSide!==touched){
-        ball.vx=-Math.max(40,preSpeed*MATRIX_SIDE_WALL_KICK_MULT);
+        const inwardDirection=touched==='left'?1:-1;
+        ball.vx=inwardDirection*Math.max(40,preSpeed*MATRIX_SIDE_WALL_KICK_MULT);
         ball.sideWallKickCooldown=MATRIX_SIDE_WALL_COOLDOWN;
         ball.sideWallSide=touched;
       }
@@ -1462,7 +1490,7 @@
     resetBallToTop(ball,{keepValue:false,delay:.14,returnKick:true});
   }
 
-  function updateBalls(dt){
+  function stepBalls(dt){
     const gravity=680;
     updatePegRotors(dt);
 
@@ -1495,6 +1523,17 @@
       if(b.respawnDelay>0)continue;
       resolveMatrixSideReboundWall(b,dt);
       resolveMatrixTopBottomWalls(b);
+      if(b.zone==='upper'){
+        for(const p of upperPegs)collidePeg(b,p,.88);
+      }else if(b.zone==='lower'){
+        for(const p of lowerPegs)collidePeg(b,p,.87);
+      }else if(b.zone==='multiplier'){
+        resolveMultiplierBoundaryCollisions(b);
+      }else if(b.zone==='convert'){
+        const cell=converterCells[b.convertRegion];
+        if(cell){bounceOnVerticalWall(b,cell.left,true);bounceOnVerticalWall(b,cell.right,false);}
+      }
+      resolveMultiplierWallCapCollisions(b);
       applyMultiplierEntryUnjam(b,dt);
     }
 
@@ -1513,6 +1552,21 @@
       }
       if(b.life>18){const cell=getConverterForX(b.x);settleBall(b,cell);}
     }
+  }
+
+  function updateBalls(dt){
+    let maxSpeed=0;
+    for(const b of balls){
+      if(b.respawnDelay>0)continue;
+      maxSpeed=Math.max(maxSpeed,Math.hypot(b.vx,b.vy));
+    }
+    const predictedTravel=maxSpeed*dt+340*dt*dt;
+    const substeps=Math.max(1,Math.min(
+      TUNING.collision.maxSubsteps,
+      Math.ceil(predictedTravel/TUNING.collision.maxTravelPerStep)
+    ));
+    const subDt=dt/substeps;
+    for(let i=0;i<substeps;i++)stepBalls(subDt);
   }
 
   function getBasePos(faction){
@@ -3225,6 +3279,7 @@
   log('Demo v71 已启动：火力曲线时间轴改为动态展开与滚动窗口，补入 0 秒起点，并将首尾标签向图表内部对齐。');
   log('Demo v70 已启动：累计火力曲线已增加有限值饱和与对数刻度数量限制，修复极大火力导致页面冻结、无法预览的问题。');
   log('Demo v96 已启动：弹珠碰撞启用空间哈希；冲击遮罩加入 LRU；中立网格重置改为批量复制；加入倍率保底和领土密度目标评分。');
+  log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
