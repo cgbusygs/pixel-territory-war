@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v131 · Territory Afterglow</title>
+  <title>像素领土战争 Demo v132 · Elimination Rewards</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v131</h1>
+        <h1>像素领土战争 · 战场态势 v132</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -1009,17 +1009,8 @@
   function makeBaseHudSprite(color,brightness=1){
     const canvas=document.createElement('canvas');canvas.width=176;canvas.height=176;
     const c=canvas.getContext('2d'),x=88,y=88,hudR=BASE_OUTER_RADIUS;
-    const discR=56;
 
-    // 参考 v27：基地主体采用深色中性底盘，阵营色只用于外环和辉光。
-    const disc=c.createRadialGradient(x-12,y-14,4,x,y,discR);
-    disc.addColorStop(0,'rgba(18,38,56,.96)');
-    disc.addColorStop(.54,'rgba(4,13,26,.94)');
-    disc.addColorStop(1,'rgba(1,6,15,.98)');
-    c.fillStyle=disc;c.shadowColor=color;c.shadowBlur=24;c.beginPath();c.arc(x,y,discR,0,TAU);c.fill();
-    c.shadowBlur=0;c.strokeStyle='rgba(192,239,255,.22)';c.lineWidth=1;c.beginPath();c.arc(x,y,discR,0,TAU);c.stroke();
-
-    // 使用参考版的阵营色分段霓虹环、副环和径向刻度。
+    // v132：移除基地黑色圆形底盘，只保留阵营色分段霓虹环、副环和径向刻度。
     c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=14;c.lineWidth=3;
     const start=-Math.PI*.88,end=Math.PI*.88,segments=14;
     for(let i=0;i<segments;i++){
@@ -1197,6 +1188,16 @@
     if(abs>=1e3)return (n/1e3).toFixed(abs>=1e4?0:1).replace('.0','')+'K';
     return String(Math.round(n));
   }
+  function formatMachineFirepower(n){
+    if(!Number.isFinite(n))return '∞';
+    const abs=Math.abs(n);
+    if(abs>=1e15)return n.toExponential(1).replace('+','');
+    if(abs>=1e12)return (n/1e12).toFixed(1)+'T';
+    if(abs>=1e9)return (n/1e9).toFixed(1)+'B';
+    if(abs>=1e6)return (n/1e6).toFixed(1)+'M';
+    if(abs>=1e3)return (n/1e3).toFixed(1)+'K';
+    return Number(n).toFixed(1);
+  }
   const BASE_BALL_VALUE=2;
   function chooseValue(){return BASE_BALL_VALUE;}
   function radiusFromValue(value){
@@ -1277,10 +1278,16 @@
     ball.respawnDelay=delay+Math.random()*.08;
   }
 
-  function createFixedBall(faction,slot){
+  function createFixedBall(faction,slot,delayOverride=null){
     const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:chooseValue(),x:0,y:0,vx:0,vy:0,r:radiusFromValue(BASE_BALL_VALUE),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,sideWallKickCooldown:0,sideWallSide:'',gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
     balls.push(ball);
-    resetBallToTop(ball,{keepValue:true,delay:faction*.08+slot*.16});
+    resetBallToTop(ball,{keepValue:true,delay:delayOverride===null?faction*.08+slot*.16:delayOverride});
+  }
+
+  function addFactionRewardBalls(faction,count){
+    let nextSlot=0;
+    for(const ball of balls)if(ball.faction===faction)nextSlot=Math.max(nextSlot,ball.slot+1);
+    for(let i=0;i<count;i++)createFixedBall(faction,nextSlot+i,i*.12);
   }
 
   function initializeFixedBallPool(){
@@ -1294,7 +1301,7 @@
     if(eliminated[selectedFaction]){log(`${FACTIONS[selectedFaction].name}已被淘汰，无法重新投放弹珠`,selectedFaction);return;}
     const selected=balls.filter(ball=>ball.faction===selectedFaction).sort((a,b)=>a.slot-b.slot);
     selected.forEach((ball,index)=>resetBallToTop(ball,{keepValue:false,useControls:true,delay:index*.14}));
-    log(`${FACTIONS[selectedFaction].name}的 3 枚固定弹珠已重新投放`,selectedFaction);
+    log(`${FACTIONS[selectedFaction].name}的 ${selected.length} 枚弹珠已重新投放`,selectedFaction);
   }
 
   function collidePeg(b,p,speedRetention=MARBLE_COLLISION_SPEED_RETAIN){
@@ -1764,7 +1771,8 @@
     const amount=ball.value;
     cell.hitCount=(cell.hitCount||0)+1;
     stocks[ball.faction][cell.key]+=amount;
-    log(`${FACTIONS[ball.faction].name}的 ${formatNum(ball.value)} 弹珠落入【${WEAPONS[cell.key].name}转换格】，兑现 ${formatNum(amount)} 火力；原球复原回顶`,ball.faction);
+    const amountText=cell.key==='machine'?formatMachineFirepower(amount):formatNum(amount);
+    log(`${FACTIONS[ball.faction].name}的 ${formatNum(ball.value)} 弹珠落入【${WEAPONS[cell.key].name}转换格】，兑现 ${amountText} 火力；原球复原回顶`,ball.faction);
     triggerWeapon(ball.faction,cell.key,amount);
     updateStocks();
     pulses.push({type:'convert',x:cell.x+cell.w/2,y:BOARD.convertTop+31,r:0,max:70,color:FACTIONS[ball.faction].color,life:1});
@@ -1986,7 +1994,7 @@
     if(weapon==='machine'){
       machineFirepowerPool[faction]+=totalFirepower;
       const bulletRatio=getMachineBulletPowerRatio(machineFirepowerPool[faction]);
-      log(`${FACTIONS[faction].name}获得机枪火力 ${formatNum(totalFirepower)}，当前剩余机枪火力为 ${formatNum(machineFirepowerPool[faction])}；每发消耗 1 火力，当前每发携带 ${(bulletRatio*100).toFixed(1)}% 火力`,faction);
+      log(`${FACTIONS[faction].name}获得机枪火力 ${formatMachineFirepower(totalFirepower)}，当前剩余机枪火力为 ${formatMachineFirepower(machineFirepowerPool[faction])}；每发消耗 1 火力，当前每发携带 ${(bulletRatio*100).toFixed(1)}% 火力`,faction);
       return;
     }
 
@@ -2065,13 +2073,23 @@
     }
   }
 
-  function paintTerritoryCell(x,y,faction){
-    if(x<0||x>=GRID_W||y<0||y>=GRID_H)return false;
-    const idx=y*GRID_W+x,prev=owner[idx];if(prev===faction)return false;
-    if(prev!==255)territoryCounts[prev]--;territoryCounts[faction]++;owner[idx]=faction;territoryCapturedAt[idx]=simulationElapsed;
+  function refreshTerritoryCell(idx,faction){
+    territoryCapturedAt[idx]=simulationElapsed;
     if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
     const p=idx*4,rgb=territoryFreshRGB[faction];territoryPixels[p]=rgb[0];territoryPixels[p+1]=rgb[1];territoryPixels[p+2]=rgb[2];territoryPixels[p+3]=255;
-    return true;
+  }
+
+  function paintTerritoryCell(x,y,faction,refreshOwned=false){
+    if(x<0||x>=GRID_W||y<0||y>=GRID_H)return 0;
+    const idx=y*GRID_W+x,prev=owner[idx];
+    if(prev===faction){
+      if(!refreshOwned)return 0;
+      refreshTerritoryCell(idx,faction);
+      return 2;
+    }
+    if(prev!==255)territoryCounts[prev]--;
+    territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);
+    return 1;
   }
 
   function getImpactMask(r,gx,gy){
@@ -2098,13 +2116,14 @@
     return {mask,baseX,baseY,qr};
   }
 
-  function applyImpact(gx,gy,r,faction,budget=Infinity){
+  function applyImpact(gx,gy,r,faction,budget=Infinity,refreshOwned=false){
     budget=Math.max(0,Math.floor(budget));if(budget<=0)return 0;
-    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy);let changed=0;
+    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy);let changed=0,refreshed=false;
     for(let i=0;i<mask.length&&changed<budget;i+=2){
-      if(paintTerritoryCell(baseX+mask[i],baseY+mask[i+1],faction))changed++;
+      const result=paintTerritoryCell(baseX+mask[i],baseY+mask[i+1],faction,refreshOwned);
+      if(result===1)changed++;else if(result===2)refreshed=true;
     }
-    if(changed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
+    if(changed||refreshed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
     return changed;
   }
 
@@ -2135,12 +2154,13 @@
     if(remaining<=0)return {spent:0,exhausted:true,x:x1,y:y1};
     const initialRadius=p.kind==='machine'?1.65*MACHINE_COLLISION_SCALE*MACHINE_CONTACT_SCALE:p.kind==='orb'?p.r:p.kind==='sniper'?1.35:2.8;
     const length=Math.hypot(x2-x1,y2-y1),spacing=Math.max(1.1,Math.min(4.0,initialRadius*.92)),steps=Math.max(1,Math.ceil(length/spacing));
+    const refreshOwned=p.kind==='orb'||p.kind==='scatter'||p.kind==='sniper';
     let spentTotal=0,lastX=x1,lastY=y1;
     for(let i=1;i<=steps;i++){
       const t=i/steps,gx=x1+(x2-x1)*t,gy=y1+(y2-y1)*t;
       // 大球每次占领后立刻同步火力与半径，避免用旧尺寸完成整段扫掠。
       const radius=p.kind==='orb'?p.r:initialRadius;
-      const spent=applyImpact(gx,gy,radius,p.faction,remaining);
+      const spent=applyImpact(gx,gy,radius,p.faction,remaining,refreshOwned);
       remaining-=spent;spentTotal+=spent;lastX=gx;lastY=gy;
       if(p.kind==='orb'&&spent>0)syncProjectileFirepower(p,remaining);
       if(remaining<=0)break;
@@ -2453,9 +2473,17 @@
     for(const projectile of projectiles)if(projectile.faction===faction)projectile.dead=true;
     for(let i=fireQueue.length-1;i>=0;i--)if(fireQueue[i].data.faction===faction)fireQueue.splice(i,1);
     for(let i=beams.length-1;i>=0;i--)if(beams[i].faction===faction)beams.splice(i,1);
+    const rewardSummary=[];
+    for(let survivor=0;survivor<FACTIONS.length;survivor++){
+      if(eliminated[survivor])continue;
+      const reward=survivor===attacker?2:1;
+      addFactionRewardBalls(survivor,reward);
+      rewardSummary.push(`${FACTIONS[survivor].name}+${reward}`);
+    }
     for(let ring=0;ring<4;ring++)addEffect({type:'baseHit',x,y,r:ring*5,max:26+ring*12,color:FACTIONS[faction].color,life:1.15-ring*.12,decay:1.45+ring*.18});
     const attackerName=attacker===null?'未知阵营':FACTIONS[attacker].name;
     log(`${FACTIONS[faction].name}核心被${attackerName}弹丸击中，已被淘汰`,faction);
+    if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}`,attacker!==null?attacker:null);
     updateBaseTextCaches();updateStats();
   }
 
@@ -3014,7 +3042,7 @@
       el.textContent='总火力 '+formatNum(getFactionCumulativeFirepower(faction));
     });
   }
-  function updateStocks(){UI.stockEls.forEach(el=>{if(eliminated[selectedFaction]){el.textContent='阵营已淘汰';return;}const key=el.dataset.stock,total=stocks[selectedFaction][key],baseMultiple=Math.floor(total/BASE_BALL_VALUE);if(key==='machine'){const pending=getPendingMachineFirepower(selectedFaction),ratio=getMachineBulletPowerRatio(pending);el.textContent=`待发 ${formatNum(pending)} · 单发 ${(ratio*100).toFixed(1)}%`;}else{el.textContent=`累计 ${formatNum(total)} · ${formatNum(baseMultiple)}×基础球`;}});updatePowerLegend();}
+  function updateStocks(){UI.stockEls.forEach(el=>{if(eliminated[selectedFaction]){el.textContent='阵营已淘汰';return;}const key=el.dataset.stock,total=stocks[selectedFaction][key],baseMultiple=Math.floor(total/BASE_BALL_VALUE);if(key==='machine'){const pending=getPendingMachineFirepower(selectedFaction),ratio=getMachineBulletPowerRatio(pending);el.textContent=`待发 ${formatMachineFirepower(pending)} · 单发 ${(ratio*100).toFixed(1)}%`;}else{el.textContent=`累计 ${formatNum(total)} · ${formatNum(baseMultiple)}×基础球`;}});updatePowerLegend();}
 
   function drawText(ctx,text,x,y,{
     fillStyle='#ffffff',
@@ -3094,7 +3122,7 @@
       }else{
         drawText(ctx,formatNum(shieldValue[f]),90,15,{fillStyle:'#f2fdff',font:'800 18px monospace',align:'center',baseline:'middle'});
         drawText(ctx,'SHIELD',90,33,{fillStyle:'rgba(173,215,230,.62)',font:'8px monospace',align:'center',baseline:'middle'});
-        drawText(ctx,formatNum(machineFirepowerPool[f]),90,50,{fillStyle:'#e9faff',font:'700 12px monospace',align:'center',baseline:'middle'});
+        drawText(ctx,formatMachineFirepower(machineFirepowerPool[f]),90,50,{fillStyle:'#e9faff',font:'700 12px monospace',align:'center',baseline:'middle'});
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:col,font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }
     }
@@ -3672,6 +3700,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v130 已启动：领土边界闪点密度提升至 300%；亮度按所属方格最近占领时间计算，0 秒为 100%，30 秒降至 25% 并保持。');
   log('Demo v129 已启动：异色领土临界网格随机出现阵营色闪点；单点由亮到暗，30 秒后全局亮度在 30 秒内衰减至 25% 并保持。');
