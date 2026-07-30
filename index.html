@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v142 · Full Bleed Capture</title>
+  <title>像素领土战争 Demo v143 · Escalating Territory</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v142</h1>
+        <h1>像素领土战争 · 战场态势 v143</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -730,6 +730,7 @@
   const SIM_STEP=1/PERF_PROFILE.simulationHz;
   const TERRITORY_STEP=1/PERF_PROFILE.territoryHz;
   const TERRITORY_UPLOAD_STEP=1/PERF_PROFILE.territoryUploadHz;
+  const TERRITORY_CAPTURE_FIREPOWER_INTERVAL=180;
   const TRAIL_UPDATE_STEP=1/PERF_PROFILE.trailHz;
   const EFFECT_UPDATE_STEP=1/PERF_PROFILE.effectHz;
   const HUD_TEXT_STEP=1/PERF_PROFILE.hudTextHz;
@@ -2353,6 +2354,10 @@
     return true;
   }
 
+  function getTerritoryCaptureFirepower(elapsed=simulationElapsed){
+    return 1+Math.floor(Math.max(0,elapsed)/TERRITORY_CAPTURE_FIREPOWER_INTERVAL);
+  }
+
   function paintTerritoryCell(x,y,faction,refreshOwned=false){
     if(x<0||x>=GRID_W||y<0||y>=GRID_H)return 0;
     const idx=y*GRID_W+x,prev=owner[idx];
@@ -2405,10 +2410,12 @@
 
   function applyImpact(gx,gy,r,faction,budget=Infinity,refreshOwned=false){
     budget=Math.max(0,Math.floor(budget));if(budget<=0)return 0;
+    const captureFirepower=getTerritoryCaptureFirepower();
+    const captureCapacity=Number.isFinite(budget)?Math.floor(budget/captureFirepower):Infinity;
     const qrEstimate=Math.max(.5,Math.round(r*2)/2),limEstimate=Math.ceil(qrEstimate+1);
-    const requireRadialOrder=budget<(limEstimate*2+1)*(limEstimate*2+1);
-    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy,requireRadialOrder);let changed=0,refreshed=false;
-    for(let i=0;i<mask.length&&changed<budget;i+=2){
+    const requireRadialOrder=captureCapacity<(limEstimate*2+1)*(limEstimate*2+1);
+    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy,requireRadialOrder);let changed=0,spent=0,refreshed=false;
+    for(let i=0;i<mask.length;i+=2){
       const x=baseX+mask[i],y=baseY+mask[i+1];
       if(x<0||x>=GRID_W||y<0||y>=GRID_H)continue;
       const idx=y*GRID_W+x,previous=owner[idx];
@@ -2417,11 +2424,12 @@
         refreshTerritoryCell(idx,faction);refreshed=true;
         continue;
       }
+      if(spent+captureFirepower>budget)break;
       if(previous!==255)territoryCounts[previous]--;
-      territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;
+      territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;spent+=captureFirepower;
     }
     if(changed||refreshed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
-    return changed;
+    return spent;
   }
 
   function flushTerritory(force=false){
@@ -3269,7 +3277,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v142-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v143-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -4195,8 +4203,11 @@
     wctx.save();wctx.globalCompositeOperation='source-over';wctx.textAlign='center';wctx.textBaseline='middle';wctx.lineJoin='round';
     for(const p of renderOrbProjectiles){
       if(p.firepower<=0)continue;
-      const label=formatNum(p.firepower),fontSize=Math.max(8,Math.min(30,p.r*.34)),labelY=p.r>=9?p.y:p.y-p.r-5;
-      wctx.font=`800 ${fontSize}px monospace`;wctx.lineWidth=Math.max(2,fontSize*.24);wctx.strokeStyle='rgba(0,5,14,.92)';wctx.globalAlpha=.96;wctx.strokeText(label,p.x,labelY);
+      const label=formatNum(p.firepower),maxLabelWidth=Math.max(12,p.r*1.5),labelY=p.r>=9?p.y:p.y-p.r-5;
+      const fittedFontSize=maxLabelWidth/Math.max(1,label.length*.62);
+      const fontSize=Math.max(8,Math.min(72,p.r*.48,fittedFontSize));
+      wctx.font=`800 ${fontSize}px monospace`;
+      wctx.lineWidth=Math.max(2,fontSize*.22);wctx.strokeStyle='rgba(0,5,14,.92)';wctx.globalAlpha=.96;wctx.strokeText(label,p.x,labelY);
       wctx.fillStyle='#eefbff';wctx.fillText(label,p.x,labelY);
     }
     wctx.restore();
@@ -4330,7 +4341,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log(`Demo v142 已启动：一局录像仅包含火力生成矩阵与战场，两块画布无标题、无边框、无留白地铺满 16:9；支持 1080P60 / 4K30 流式导出。`);
+  log(`Demo v143 已启动：每满 3 分钟单格占领所需火力增加 1；大球数值标签随球体直径同步放大并自动限制在球体内。`);
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
