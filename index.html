@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v119 · Clean Marble Body</title>
+  <title>像素领土战争 Demo v120 · Unified Collision Energy</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v119</h1>
+        <h1>像素领土战争 · 战场态势 v120</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -392,8 +392,7 @@
       ballPasses:3,                // 多轮位置修正，降低拥挤区残余重叠
       maxSubsteps:4,               // 移动端或高速状态下增加物理微步，避免穿透
       maxTravelPerStep:5,          // 单微步最大位移，低于最小弹珠半径
-      normalRestitution:.90,
-      congestedRestitution:.68
+      energyRetention:.95          // 弹珠互撞与转盘点碰撞统一保留 95% 可耗散动能
     }),
     multiplierEntry:Object.freeze({
       largeDiameterToOpening:.72,  // 弹珠直径达到入口有效宽度此比例后，视为较大弹珠
@@ -428,6 +427,7 @@
     }),
     ui:Object.freeze({maxLogEntries:32})
   });
+  const MARBLE_COLLISION_SPEED_RETAIN=Math.sqrt(TUNING.collision.energyRetention);
 
   function get2DContext(canvas,options){return canvas.getContext('2d',options)||canvas.getContext('2d');}
   const lctx=get2DContext(leftCanvas,{alpha:false,desynchronized:true});
@@ -1035,15 +1035,14 @@
     log(`${FACTIONS[selectedFaction].name}的 3 枚固定弹珠已重新投放`,selectedFaction);
   }
 
-  function collidePeg(b,p,loss=0.88){
+  function collidePeg(b,p,speedRetention=MARBLE_COLLISION_SPEED_RETAIN){
     const dx=b.x-p.x,dy=b.y-p.y,dist=Math.hypot(dx,dy),min=b.r+p.r;
     if(dist<min&&dist>0.001){
       const nx=dx/dist,ny=dy/dist;
       b.x=p.x+nx*min;b.y=p.y+ny*min;
       const dot=b.vx*nx+b.vy*ny;
-      b.vx=(b.vx-2*dot*nx)*loss+(Math.random()-.5)*8;
-      b.vy=(b.vy-2*dot*ny)*loss;
-      if(Math.abs(b.vy)<14)b.vy+=18;
+      b.vx=(b.vx-2*dot*nx)*speedRetention;
+      b.vy=(b.vy-2*dot*ny)*speedRetention;
     }
   }
 
@@ -1076,15 +1075,7 @@
     const normalVelocity=rvx*nx+rvy*ny;
     if(normalVelocity>=0)return;
 
-    const gap=getGapFieldCell();
-    const nearGapEntrance=Boolean(gap)
-      &&a.y>BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE
-      &&a.y<BOARD.multTop+GAP_FIELD_ENTRY_BAND_BELOW
-      &&b.y>BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE
-      &&b.y<BOARD.multTop+GAP_FIELD_ENTRY_BAND_BELOW
-      &&a.x>gap.x-a.r-18&&a.x<gap.x+gap.w+a.r+18
-      &&b.x>gap.x-b.r-18&&b.x<gap.x+gap.w+b.r+18;
-    const restitution=nearGapEntrance?TUNING.collision.congestedRestitution:TUNING.collision.normalRestitution;
+    const restitution=MARBLE_COLLISION_SPEED_RETAIN;
     const impulse=-(1+restitution)*normalVelocity/(1/massA+1/massB);
     const ix=impulse*nx,iy=impulse*ny;
     a.vx-=ix/massA;a.vy-=iy/massA;
@@ -1537,9 +1528,9 @@
       resolveMatrixSideReboundWall(b,dt);
       resolveMatrixTopBottomWalls(b);
       if(b.zone==='upper'){
-        for(const p of upperPegs)collidePeg(b,p,.88);
+        for(const p of upperPegs)collidePeg(b,p);
       }else if(b.zone==='lower'){
-        for(const p of lowerPegs)collidePeg(b,p,.87);
+        for(const p of lowerPegs)collidePeg(b,p);
       }
       resolveMultiplierWallCapCollisions(b);
     }
@@ -1552,9 +1543,9 @@
       resolveMatrixSideReboundWall(b,dt);
       resolveMatrixTopBottomWalls(b);
       if(b.zone==='upper'){
-        for(const p of upperPegs)collidePeg(b,p,.88);
+        for(const p of upperPegs)collidePeg(b,p);
       }else if(b.zone==='lower'){
-        for(const p of lowerPegs)collidePeg(b,p,.87);
+        for(const p of lowerPegs)collidePeg(b,p);
       }else if(b.zone==='multiplier'){
         resolveMultiplierBoundaryCollisions(b);
       }else if(b.zone==='convert'){
@@ -3336,6 +3327,7 @@
   log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
   log('Demo v118 已启动：撤销左侧转盘直径放大，四个转盘恢复统一尺寸；移除不参与弹珠碰撞的装饰外圈。');
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
+  log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
