@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v135 · Dynamic Converter</title>
+  <title>像素领土战争 Demo v136 · Expanded Orb</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v135</h1>
+        <h1>像素领土战争 · 战场态势 v136</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -596,8 +596,8 @@
       kickCooldown:.72             // 防止同一弹珠连续触发冲量
     }),
     converter:Object.freeze({
-      // 开局关闭两侧端口；15 分钟内令两侧权重由 0 线性增长至 1，中间三项始终保持权重 1。
-      equalizeSeconds:15*60,
+      // 开局关闭两侧端口；20 分钟内令两侧权重由 0 线性增长至 1，中间三项始终保持权重 1。
+      equalizeSeconds:20*60,
       inset:3
     }),
     orbBulletMomentum:Object.freeze({
@@ -1983,13 +1983,10 @@
     return Math.log2(Math.max(0,firepower)/2+1);
   }
 
-  // 大球直径与当前剩余火力呈对数正相关。
-  // 公式：直径 = 5 + 15 × log10（当前剩余火力 + 1）。
-  // 1 火力约 10px，100 火力约 35px，1K 火力约 50px，100K 火力约 80px。
-  // v109：大球直径采用饱和型幂函数。
-  // 约为：1K -> 21.8px，1M -> 91.4px，100M -> 164px；火力无限增大时趋近 250px。
+  // 大球直径按当前剩余火力采用饱和型幂函数。
+  // v136：约为 1K -> 34.9px、1M -> 146.2px、100M -> 262.5px；火力无限增大时趋近 400px。
   const ORB_MIN_DIAMETER=5;
-  const ORB_MAX_DIAMETER=250;
+  const ORB_MAX_DIAMETER=400;
   const ORB_SIZE_COEFFICIENT=63;
   const ORB_SIZE_EXPONENT=.26;
   // v39 大球独立物理参数：120Hz 下使用连续圆检测与接触迟滞，避免重复结算和边缘黏连。
@@ -3733,6 +3730,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v136 已启动：大球饱和直径上限由 250px 提高到 400px；火力兑现端口达到 1:1:1:1:1 的线性过渡时间由 15 分钟延长到 20 分钟。');
   log('Demo v135 已启动：五个火力兑现端口从开局 0:1:1:1:0 线性过渡，在模拟 15:00 达到 1:1:1:1:1 后固定；物理边界、命中归属与标签同步更新。');
   log('Demo v134 已启动：领土亮度更新提高到每秒 10 次；外圈转盘碰撞点与弹珠进行双向角动量交换，转盘受击后由驱动力平滑回归基础转速。');
   log('Demo v133 已启动：移除领土临界随机闪点；新占领方格在 0 秒以原亮度 200% 闪现，0.5 秒回落至原亮度后继续执行 30 秒衰减。');
