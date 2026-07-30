@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v133 · Capture Flash</title>
+  <title>像素领土战争 Demo v134 · Rotor Momentum</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v133</h1>
+        <h1>像素领土战争 · 战场态势 v134</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -763,7 +763,7 @@
     const accent=[parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16)];
     return territoryRGB[faction].map((base,channel)=>Math.round(base+(accent[channel]-base)*.62));
   });
-  const TERRITORY_BRIGHTNESS_STEP=.5;
+  const TERRITORY_BRIGHTNESS_STEP=.1;
   const TERRITORY_FLASH_STEP=.1;
   const TERRITORY_FLASH_DURATION=.5;
   const TERRITORY_TILE_SIZE=32;
@@ -850,6 +850,9 @@
   // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值。
   const PEG_DISC_ORBIT_RADIUS=123.552;
   const PEG_DISC_SPIN_SPEED=3.15;
+  const PEG_DISC_ROTOR_INERTIA=7200;
+  const PEG_DISC_MAX_SPIN_SPEED=8.5;
+  const PEG_DISC_MOTOR_RESPONSE=.75;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
@@ -870,11 +873,12 @@
   }
 
   function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0){
-    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:PEG_DISC_SPIN_SPEED*spinDir,spinDir,pegs:[]};
-    const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0};
+    const baseAngularSpeed=PEG_DISC_SPIN_SPEED*spinDir;
+    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:baseAngularSpeed,baseAngularSpeed,inertia:PEG_DISC_ROTOR_INERTIA,spinDir,pegs:[]};
+    const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0,rotor};
     rotor.pegs.push(centerPeg); targetPegs.push(centerPeg);
     for(let i=0;i<6;i++){
-      const peg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:false,phase:i*TAU/6};
+      const peg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:false,phase:i*TAU/6,rotor};
       rotor.pegs.push(peg); targetPegs.push(peg);
     }
     updateRotorPegPositions(rotor);
@@ -895,8 +899,15 @@
   }
 
   function updatePegRotors(dt){
-    for(const rotor of upperRotors){rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt); updateRotorPegPositions(rotor);}
-    for(const rotor of lowerRotors){rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt); updateRotorPegPositions(rotor);}
+    const motorBlend=1-Math.exp(-PEG_DISC_MOTOR_RESPONSE*dt);
+    for(const rotor of upperRotors){
+      rotor.angularSpeed+=(rotor.baseAngularSpeed-rotor.angularSpeed)*motorBlend;
+      rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt);updateRotorPegPositions(rotor);
+    }
+    for(const rotor of lowerRotors){
+      rotor.angularSpeed+=(rotor.baseAngularSpeed-rotor.angularSpeed)*motorBlend;
+      rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt);updateRotorPegPositions(rotor);
+    }
   }
 
   function buildBoard(){
@@ -1300,9 +1311,24 @@
     if(dist<min&&dist>0.001){
       const nx=dx/dist,ny=dy/dist;
       b.x=p.x+nx*min;b.y=p.y+ny*min;
-      const dot=b.vx*nx+b.vy*ny;
-      b.vx=(b.vx-2*dot*nx)*speedRetention;
-      b.vy=(b.vy-2*dot*ny)*speedRetention;
+      const rotor=p.rotor;
+      if(rotor&&!p.isCenter){
+        const rx=p.x-rotor.cx,ry=p.y-rotor.cy;
+        const pegVx=-rotor.angularSpeed*ry,pegVy=rotor.angularSpeed*rx;
+        const relativeNormal=(b.vx-pegVx)*nx+(b.vy-pegVy)*ny;
+        if(relativeNormal>=0)return;
+        const ballMass=Math.max(1,b.r*b.r);
+        const lever=rx*ny-ry*nx;
+        const effectiveInvMass=1/ballMass+lever*lever/rotor.inertia;
+        const impulse=-(1+speedRetention)*relativeNormal/effectiveInvMass;
+        b.vx+=impulse*nx/ballMass;b.vy+=impulse*ny/ballMass;
+        rotor.angularSpeed=Math.max(-PEG_DISC_MAX_SPIN_SPEED,Math.min(PEG_DISC_MAX_SPIN_SPEED,rotor.angularSpeed-impulse*lever/rotor.inertia));
+      }else{
+        const dot=b.vx*nx+b.vy*ny;
+        if(dot>=0)return;
+        b.vx-=dot*(1+speedRetention)*nx;
+        b.vy-=dot*(1+speedRetention)*ny;
+      }
     }
   }
 
@@ -3636,7 +3662,7 @@
     for(let i=0;i<4;i++){STOCK_KEYS.forEach(k=>stocks[i][k]=0);shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;}
     previousOrbPairContacts.clear();currentOrbPairContacts.clear();
     resetTopHitCounts();
-    resetTerritory();initializeFixedBallPool();simulationElapsed=0;autoPauseTriggered=false;paused=false;simAccumulator=0;
+    buildPegRotors();resetTerritory();initializeFixedBallPool();simulationElapsed=0;autoPauseTriggered=false;paused=false;simAccumulator=0;
     if(UI.pauseBtn)UI.pauseBtn.textContent='暂停';if(UI.feed)UI.feed.innerHTML='';
     updateBaseTextCaches();
     log('战场已重置：四方恢复存活，基础护盾恢复为 10M；实心护盾覆盖区保护基地核心，最中心白色圆点被敌方弹丸命中即淘汰；火力生成不设玩法上限。');
@@ -3670,6 +3696,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v134 已启动：领土亮度更新提高到每秒 10 次；外圈转盘碰撞点与弹珠进行双向角动量交换，转盘受击后由驱动力平滑回归基础转速。');
   log('Demo v133 已启动：移除领土临界随机闪点；新占领方格在 0 秒以原亮度 200% 闪现，0.5 秒回落至原亮度后继续执行 30 秒衰减。');
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
