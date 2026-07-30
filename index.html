@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v115 · Left Rotor Speed</title>
+  <title>像素领土战争 Demo v116 · Machine Pool Decay</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v115</h1>
+        <h1>像素领土战争 · 战场态势 v116</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -367,7 +367,7 @@
   const TUNING=Object.freeze({
     machine:Object.freeze({
       fireStepDeg:.05,             // 炮管每旋转多少度结算一次机枪发射
-      firePercent:.000025,         // 每次结算消耗当前机枪池的比例
+      firePercent:.000025,         // 每次结算的原始弹数比例，实际消耗再乘当前衰减系数
       bulletPowerFullPool:400000,  // 机枪池不高于此值时，每发保持 100% 火力
       bulletPowerHalfPool:10000000,// 机枪池达到此值时，每发精确为 50% 火力
       bulletPowerFloor:.25,        // 机枪池无限增大时，每发火力渐近下限
@@ -532,7 +532,6 @@
   const cannonStepCarry=[0,0,0,0];
   const hudStars=Array.from({length:110},(_,i)=>({x:(i*137.53)%WV.w,y:(i*79.71)%WV.h,r:.45+(i%5)*.18,phase:(i*1.91)%TAU}));
   const machineFirepowerPool=new Float64Array(4);
-  const machineDamageCarry=new Float64Array(4);
   const machineShotIndex=new Uint32Array(4);
   const machineVisualGroups=Array.from({length:4},()=>({rounds:0,damage:0,sin:0,cos:0,speed:0,count:0,seed:0}));
 
@@ -918,7 +917,7 @@
     territoryCtx.putImageData(territoryImage,0,0);
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
-    machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineDamageCarry.fill(0);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
+    machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
@@ -2186,7 +2185,7 @@
   function eliminateFaction(faction,attacker,x,y){
     if(eliminated[faction])return;
     eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;
-    machineFirepowerPool[faction]=0;machineDamageCarry[faction]=0;cannonStepCarry[faction]=0;
+    machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
     for(let i=balls.length-1;i>=0;i--)if(balls[i].faction===faction)balls.splice(i,1);
     for(const projectile of projectiles)if(projectile.faction===faction)projectile.dead=true;
@@ -2434,9 +2433,7 @@
 
   function flushMachineVisualGroup(faction){
     const g=machineVisualGroups[faction];if(g.rounds<=0)return;
-    const accumulatedDamage=g.damage+machineDamageCarry[faction];
-    const projectileDamage=Math.floor(accumulatedDamage);
-    machineDamageCarry[faction]=accumulatedDamage-projectileDamage;
+    const projectileDamage=Math.ceil(g.damage);
     if(projectileDamage>0){
       spawnProjectile({
         kind:'machine',faction,angle:normalizeAngle(Math.atan2(g.sin,g.cos)),speed:g.speed/g.rounds,
@@ -2459,12 +2456,14 @@
         const currentTotal=Math.floor(machineFirepowerPool[f]);if(currentTotal<=0)break;
         const roundCount=Math.min(currentTotal,Math.max(1,Math.ceil(currentTotal*MACHINE_FIRE_PERCENT)));
         const bulletPowerRatio=getMachineBulletPowerRatio(currentTotal);
+        // v116：衰减后的整数火力同时作为伤害和弹药池消耗，结算统一向上取整。
+        const effectiveFirepower=Math.min(currentTotal,Math.max(1,Math.ceil(roundCount*bulletPowerRatio)));
         const shotIndex=machineShotIndex[f]++,angleNoise=machineNaturalNoise(shotIndex,f+1)*MACHINE_ANGLE_NOISE_DEG*Math.PI/180;
         const speedNoise=machineNaturalNoise(shotIndex,f+11)*MACHINE_SPEED_NOISE;
         const angle=normalizeAngle(prevAngle+(step+1)*stepRad+angleNoise),shotSpeed=MACHINE_BASE_SPEED*(1+speedNoise);
         if(g.count===0)g.seed=shotIndex;
-        g.rounds+=roundCount;g.damage+=roundCount*bulletPowerRatio;g.sin+=Math.sin(angle)*roundCount;g.cos+=Math.cos(angle)*roundCount;g.speed+=shotSpeed*roundCount;g.count++;
-        machineFirepowerPool[f]=currentTotal-roundCount;
+        g.rounds+=roundCount;g.damage+=effectiveFirepower;g.sin+=Math.sin(angle)*roundCount;g.cos+=Math.cos(angle)*roundCount;g.speed+=shotSpeed*roundCount;g.count++;
+        machineFirepowerPool[f]=currentTotal-effectiveFirepower;
         if(g.count>=groupTarget)flushMachineVisualGroup(f);
         if(machineFirepowerPool[f]<=0){
           machineFirepowerPool[f]=0;flushMachineVisualGroup(f);log(`${FACTIONS[f].name}的剩余机枪火力已全部消耗`,f);break;
@@ -3343,8 +3342,9 @@
   log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
   log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
   log('Demo v113 已启动：机枪转换口缩为原宽度 85%，护盾缩为 90%；释放宽度按霰弹、大球、狙击原有 1:2:1 比例重新分配。');
-  log('Demo v114 已启动：机枪单发火力以 400K=100%、10M=50% 为锚点连续衰减，机枪池无限增大时趋近 25%；弹药消耗保持每发 1 火力。');
+  log('Demo v114 已启动：机枪单发火力以 400K=100%、10M=50% 为锚点连续衰减，机枪池无限增大时趋近 25%。');
   log('Demo v115 已启动：左上、左下转盘角速度提升至 v114 的 150%，右侧转盘保持原速。');
+  log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
