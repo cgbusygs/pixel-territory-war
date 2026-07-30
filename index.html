@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v116 · Machine Pool Decay</title>
+  <title>像素领土战争 Demo v117 · Left Rotor Diameter</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v116</h1>
+        <h1>像素领土战争 · 战场态势 v117</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -647,6 +647,8 @@
   const PEG_DISC_SPIN_SPEED=3.15;
   // v115：左上、左下转盘在 v114 基础上提升至 150%，右侧转盘保持原速。
   const PEG_DISC_LEFT_SPIN_MULT=1.5;
+  // v117：左上、左下转盘的轨道直径在 v116 基础上放大至 110%，右侧保持原尺寸。
+  const PEG_DISC_LEFT_DIAMETER_MULT=1.1;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
@@ -666,8 +668,8 @@
     }
   }
 
-  function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0,speedMultiplier=1){
-    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:PEG_DISC_SPIN_SPEED*spinDir*speedMultiplier,spinDir,pegs:[]};
+  function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0,speedMultiplier=1,diameterMultiplier=1){
+    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS*diameterMultiplier,angle:startAngle,angularSpeed:PEG_DISC_SPIN_SPEED*spinDir*speedMultiplier,spinDir,pegs:[]};
     const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0};
     rotor.pegs.push(centerPeg); targetPegs.push(centerPeg);
     for(let i=0;i<6;i++){
@@ -685,9 +687,9 @@
     const upperY=(BOARD.upperTop+BOARD.upperBottom)*.5;
     const lowerY=(BOARD.lowerTop+BOARD.lowerBottom)*.5;
     // 四个转盘按“逆 / 顺 / 逆 / 顺”旋转：左上、右上、左下、右下。
-    createPegRotor(upperRotors,upperPegs,leftX,upperY,-1,0.35,PEG_DISC_LEFT_SPIN_MULT);
+    createPegRotor(upperRotors,upperPegs,leftX,upperY,-1,0.35,PEG_DISC_LEFT_SPIN_MULT,PEG_DISC_LEFT_DIAMETER_MULT);
     createPegRotor(upperRotors,upperPegs,rightX,upperY,1,1.15);
-    createPegRotor(lowerRotors,lowerPegs,leftX,lowerY,-1,0.75,PEG_DISC_LEFT_SPIN_MULT);
+    createPegRotor(lowerRotors,lowerPegs,leftX,lowerY,-1,0.75,PEG_DISC_LEFT_SPIN_MULT,PEG_DISC_LEFT_DIAMETER_MULT);
     createPegRotor(lowerRotors,lowerPegs,rightX,lowerY,1,1.55);
   }
 
@@ -3345,6 +3347,7 @@
   log('Demo v114 已启动：机枪单发火力以 400K=100%、10M=50% 为锚点连续衰减，机枪池无限增大时趋近 25%。');
   log('Demo v115 已启动：左上、左下转盘角速度提升至 v114 的 150%，右侧转盘保持原速。');
   log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
+  log('Demo v117 已启动：左上、左下转盘轨道直径提升至 v116 的 110%，右侧转盘和碰撞点尺寸保持不变。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
