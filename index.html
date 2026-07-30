@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v129 · Boundary Sparkles</title>
+  <title>像素领土战争 Demo v130 · Area-Aged Sparkles</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v129</h1>
+        <h1>像素领土战争 · 战场态势 v130</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -695,7 +695,7 @@
   const MACHINE_JITTER_RATE_B=TUNING.machine.jitterRateB;
   // v38：机枪每次触发消耗比例在 v37 基础上再次减半；同时降低弹体、核心、尾迹与碰撞火花亮度。
   const MAX_EFFECT_PARTICLES=520;
-  const MAX_BOUNDARY_SPARKLES=120;
+  const MAX_BOUNDARY_SPARKLES=360;
   const BOUNDARY_SPARKLE_STEP=.05;
   // 数值枚举和位标记替代每帧 Set<string> 查询。
   const FX_TYPE=Object.freeze({GENERIC:0,SHIELD_SPARK:1,ANNIHILATION_SPARK:2,SHIELD_HIT:3,ANNIHILATION:4,IMPACT:5,BASE_HIT:6,PROJECTILE_HIT:7});
@@ -732,6 +732,7 @@
   // 真实 1000 × 1000 格：每个逻辑方格对应战场中的一个像素单元。
   const GRID_W=1000, GRID_H=1000;
   const owner=new Uint8Array(GRID_W*GRID_H);
+  const territoryCapturedAt=new Float32Array(GRID_W*GRID_H);
   const territoryCounts=new Uint32Array(4);
 
   // 离屏领土画布：占领发生时只更新对应像素，不在每一帧遍历 100 万格。
@@ -1090,6 +1091,7 @@
           if(previous===faction)continue;
           if(previous!==255)territoryCounts[previous]--;
           owner[cellIndex]=faction;
+          territoryCapturedAt[cellIndex]=0;
           territoryCounts[faction]++;
           const pixelIndex=cellIndex*4;
           territoryPixels[pixelIndex]=rgb[0];
@@ -1102,7 +1104,7 @@
   }
 
   function resetTerritory(){
-    owner.fill(255);territoryCounts.fill(0);
+    owner.fill(255);territoryCapturedAt.fill(0);territoryCounts.fill(0);
     territoryPixels.set(neutralTerritoryPixels);
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
@@ -1120,10 +1122,10 @@
     boundarySparkleSpawnCarry+=dt;
     if(boundarySparkleSpawnCarry<BOUNDARY_SPARKLE_STEP||boundarySparkles.length>=MAX_BOUNDARY_SPARKLES)return;
     boundarySparkleSpawnCarry%=BOUNDARY_SPARKLE_STEP;
-    const wanted=Math.min(2,MAX_BOUNDARY_SPARKLES-boundarySparkles.length);
+    const wanted=Math.min(6,MAX_BOUNDARY_SPARKLES-boundarySparkles.length);
     const cellW=WV.w/GRID_W,cellH=WV.h/GRID_H;
     let spawned=0;
-    for(let attempt=0;attempt<480&&spawned<wanted;attempt++){
+    for(let attempt=0;attempt<1440&&spawned<wanted;attempt++){
       const gx=1+Math.floor(Math.random()*(GRID_W-2));
       const gy=1+Math.floor(Math.random()*(GRID_H-2));
       const horizontal=Math.random()<.5;
@@ -2027,7 +2029,7 @@
   function paintTerritoryCell(x,y,faction){
     if(x<0||x>=GRID_W||y<0||y>=GRID_H)return false;
     const idx=y*GRID_W+x,prev=owner[idx];if(prev===faction)return false;
-    if(prev!==255)territoryCounts[prev]--;territoryCounts[faction]++;owner[idx]=faction;
+    if(prev!==255)territoryCounts[prev]--;territoryCounts[faction]++;owner[idx]=faction;territoryCapturedAt[idx]=simulationElapsed;
     const p=idx*4,rgb=territoryRGB[faction];territoryPixels[p]=rgb[0];territoryPixels[p+1]=rgb[1];territoryPixels[p+2]=rgb[2];territoryPixels[p+3]=255;
     return true;
   }
@@ -3339,11 +3341,12 @@
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
     if(boundarySparkles.length){
-      const decay=simulationElapsed<=30?1:Math.max(.25,1-(simulationElapsed-30)*.025);
       wctx.save();wctx.globalCompositeOperation='lighter';
       for(const sparkle of boundarySparkles){
         const life=Math.max(0,sparkle.life/sparkle.maxLife);
-        const brightness=life*life*decay;
+        const regionAge=Math.max(0,simulationElapsed-territoryCapturedAt[sparkle.ownedIndex]);
+        const regionBrightness=Math.max(.25,1-regionAge*.025);
+        const brightness=life*life*regionBrightness;
         if(brightness<.012)continue;
         const factionColor=FACTIONS[sparkle.faction].color;
         wctx.globalAlpha=.13*brightness;wctx.fillStyle=factionColor;
@@ -3626,6 +3629,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v130 已启动：领土边界闪点密度提升至 300%；亮度按所属方格最近占领时间计算，0 秒为 100%，30 秒降至 25% 并保持。');
   log('Demo v129 已启动：异色领土临界网格随机出现阵营色闪点；单点由亮到暗，30 秒后全局亮度在 30 秒内衰减至 25% 并保持。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
