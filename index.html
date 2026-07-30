@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v134 · Rotor Momentum</title>
+  <title>像素领土战争 Demo v135 · Dynamic Converter</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v134</h1>
+        <h1>像素领土战争 · 战场态势 v135</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -596,8 +596,9 @@
       kickCooldown:.72             // 防止同一弹珠连续触发冲量
     }),
     converter:Object.freeze({
-      // 机枪缩为原宽度 85%，护盾缩为 90%；释放宽度按其余三项原比例 1:2:1 回分配。
-      weights:Object.freeze([1.15,1.70,2.70,2.30,1.15])
+      // 开局关闭两侧端口；15 分钟内令两侧权重由 0 线性增长至 1，中间三项始终保持权重 1。
+      equalizeSeconds:15*60,
+      inset:3
     }),
     orbBulletMomentum:Object.freeze({
       inheritanceScale:.20,        // 所有“子弹→大球”速度继承缩为 v97 当前公式的 20%
@@ -817,6 +818,8 @@
   const MATRIX_TOP_WALL_Y=24;
   const MATRIX_BOTTOM_WALL_Y=Math.min(LV.h-16,BOARD.convertBottom+10);
   const MULT_SEPARATOR_HALF_WIDTH=8;
+  const CONVERTER_ORDER=Object.freeze(['scatter','machine','shield','orb','sniper']);
+  const CONVERTER_MIN_WIDTH=.01;
 
   // v93：弹珠数值从 2¹ 到 2²⁰ 时，半径从 6 线性增加到 25；之后封顶。
   const BALL_RADIUS_BASE=6;
@@ -933,14 +936,24 @@
         rightCell:i
       });
     }
-    // v97：底部火力转换窗口按 1:2:3:2:1 分配宽度，总权重为 9。
-    const order=['scatter','machine','shield','orb','sniper'];
-    const weights=TUNING.converter.weights;
-    const totalWeight=weights.reduce((sum,value)=>sum+value,0);
+    for(let i=0;i<CONVERTER_ORDER.length;i++){
+      const key=CONVERTER_ORDER[i];
+      converterCells.push({x:PLAYFIELD.left,w:0,key,left:PLAYFIELD.left,right:PLAYFIELD.left,bottom:BOARD.convertBottom-3,index:i,weight:0,share:0,hitCount:0,hitLabel:CONVERTER_SHORT_LABELS[key]||WEAPONS[key].name});
+    }
+    updateConverterLayout(simulationElapsed);
+  }
+
+  function updateConverterLayout(elapsed=simulationElapsed){
+    if(converterCells.length!==CONVERTER_ORDER.length)return;
+    const edgeWeight=Math.max(0,Math.min(1,elapsed/TUNING.converter.equalizeSeconds));
+    const totalWeight=3+edgeWeight*2;
     let converterX=PLAYFIELD.left;
-    for(let i=0;i<order.length;i++){
-      const w=i===order.length-1?PLAYFIELD.right-converterX:PLAYFIELD.width*weights[i]/totalWeight;
-      converterCells.push({x:converterX,w,key:order[i],left:converterX+3,right:converterX+w-3,bottom:BOARD.convertBottom-3,index:i,weight:weights[i],share:w/PLAYFIELD.width,hitCount:0,hitLabel:CONVERTER_SHORT_LABELS[order[i]]||WEAPONS[order[i]].name});
+    for(let i=0;i<converterCells.length;i++){
+      const cell=converterCells[i];
+      const weight=i===0||i===converterCells.length-1?edgeWeight:1;
+      const w=i===converterCells.length-1?PLAYFIELD.right-converterX:PLAYFIELD.width*weight/totalWeight;
+      const inset=Math.min(TUNING.converter.inset,w*.5);
+      cell.x=converterX;cell.w=w;cell.left=converterX+inset;cell.right=converterX+w-inset;cell.weight=weight;cell.share=w/PLAYFIELD.width;
       converterX+=w;
     }
   }
@@ -1409,8 +1422,16 @@
     return x<PLAYFIELD.left?multCells[0]:multCells[multCells.length-1];
   }
   function getConverterForX(x){
-    for(const c of converterCells)if(x>=c.x&&x<=c.x+c.w)return c;
-    return x<PLAYFIELD.left?converterCells[0]:converterCells[converterCells.length-1];
+    let firstActive=null,lastActive=null;
+    for(let i=0;i<converterCells.length;i++){
+      const c=converterCells[i];
+      if(c.w<=CONVERTER_MIN_WIDTH)continue;
+      if(!firstActive)firstActive=c;
+      lastActive=c;
+      const right=c.x+c.w;
+      if(x>=c.x&&(x<right||(i===converterCells.length-1&&x<=right)))return c;
+    }
+    return x<PLAYFIELD.left?firstActive:lastActive;
   }
 
   const GAP_LEFT=()=>{const gap=multCells.find(c=>c.type==='gap');return (gap?gap.x:PLAYFIELD.left)+3;};
@@ -1741,8 +1762,15 @@
 
   function enterConverterRegion(ball){
     const cell=getConverterForX(ball.x);
+    if(!cell)return;
     ball.zone='convert';
     ball.convertRegion=cell.index;
+  }
+
+  function syncBallConverterCell(ball){
+    const current=getConverterForX(ball.x);
+    if(current)ball.convertRegion=current.index;
+    return current;
   }
 
   function updateConverterRegion(ball){
@@ -1753,14 +1781,16 @@
       return;
     }
 
-    const cell=converterCells[ball.convertRegion];
+    const cell=syncBallConverterCell(ball);
     if(!cell){
       enterConverterRegion(ball);
       return;
     }
 
-    bounceOnVerticalWall(ball,cell.left,true);
-    bounceOnVerticalWall(ball,cell.right,false);
+    if(cell.right-cell.left>=ball.r*2){
+      bounceOnVerticalWall(ball,cell.left,true);
+      bounceOnVerticalWall(ball,cell.right,false);
+    }
 
     // 只有实际触碰火力转换盒底板时才兑现火力。
     if(ball.y+ball.r>=cell.bottom&&ball.vy>=0){
@@ -1836,8 +1866,8 @@
       }else if(b.zone==='multiplier'){
         resolveMultiplierBoundaryCollisions(b);
       }else if(b.zone==='convert'){
-        const cell=converterCells[b.convertRegion];
-        if(cell){bounceOnVerticalWall(b,cell.left,true);bounceOnVerticalWall(b,cell.right,false);}
+        const cell=syncBallConverterCell(b);
+        if(cell&&cell.right-cell.left>=b.r*2){bounceOnVerticalWall(b,cell.left,true);bounceOnVerticalWall(b,cell.right,false);}
       }
       resolveMultiplierWallCapCollisions(b);
       applyMultiplierEntryUnjam(b,dt);
@@ -3313,18 +3343,24 @@
     lctx.restore();
 
     for(const cell of converterCells){
+      if(cell.w<=CONVERTER_MIN_WIDTH)continue;
       const active=cell.key===selectedWeapon;const col=WEAPON_COLORS[cell.key];
       lctx.save();
+      lctx.beginPath();lctx.rect(cell.x,BOARD.convertTop,cell.w,BOARD.convertBottom-BOARD.convertTop);lctx.clip();
       const gradient=lctx.createLinearGradient(cell.x,BOARD.convertTop,cell.x,cell.bottom);
       gradient.addColorStop(0,active?'rgba(51,24,92,.48)':'rgba(9,25,49,.58)');gradient.addColorStop(1,active?'rgba(14,78,105,.45)':'rgba(3,13,29,.72)');
-      lctx.fillStyle=gradient;lctx.fillRect(cell.left,BOARD.convertTop,cell.right-cell.left,cell.bottom-BOARD.convertTop);
+      const innerWidth=Math.max(0,cell.right-cell.left);
+      lctx.fillStyle=gradient;lctx.fillRect(cell.left,BOARD.convertTop,innerWidth,cell.bottom-BOARD.convertTop);
       lctx.strokeStyle=active?colorWithAlpha(col,.82):'rgba(75,112,151,.56)';lctx.lineWidth=active?1.7:1;lctx.shadowColor=col;lctx.shadowBlur=active?7:0;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.convertTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.convertTop);lctx.stroke();
-      lctx.globalAlpha=active?.22:.10;lctx.fillStyle=active?col:'#69a6c8';lctx.fillRect(cell.left+3,BOARD.convertTop+3,cell.right-cell.left-6,34);
-      lctx.globalAlpha=active?.72:.32;lctx.fillRect(cell.left+3,BOARD.convertTop+37,cell.right-cell.left-6,1);
+      const headerWidth=Math.max(0,innerWidth-6);
+      lctx.globalAlpha=active?.22:.10;lctx.fillStyle=active?col:'#69a6c8';lctx.fillRect(cell.left+3,BOARD.convertTop+3,headerWidth,34);
+      lctx.globalAlpha=active?.72:.32;lctx.fillRect(cell.left+3,BOARD.convertTop+37,headerWidth,1);
+      const centerX=cell.x+cell.w/2;
+      if(cell.w>=48)drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,centerX,BOARD.convertTop+24,{fillStyle:active?'#fff':'rgba(174,203,220,.78)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?6:2});
+      else if(cell.w>=16)drawText(lctx,WEAPONS[cell.key].icon,centerX,BOARD.convertTop+24,{fillStyle:active?'#fff':'rgba(174,203,220,.78)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?6:2});
+      if(cell.w>=44)drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,centerX,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
       lctx.restore();
-      drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,cell.x+cell.w/2,BOARD.convertTop+24,{fillStyle:active?'#fff':'rgba(174,203,220,.78)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:active?col:'#2fcfff',shadowBlur:active?6:2});
-      drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,cell.x+cell.w/2,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
     }
 
     // 命中反馈位于弹珠下层，并裁剪在对应物理区域内，避免扩散圆跨墙或遮住数值。
@@ -3613,6 +3649,7 @@
   let lastLeftDraw=0,renderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
   function simulateStep(dt){
     simulationElapsed+=dt;
+    updateConverterLayout(simulationElapsed);
     updateBalls(dt);updateWar(dt);
     hudTextCarry+=dt;
     if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;updateBaseTextCaches();}
@@ -3662,7 +3699,7 @@
     for(let i=0;i<4;i++){STOCK_KEYS.forEach(k=>stocks[i][k]=0);shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;}
     previousOrbPairContacts.clear();currentOrbPairContacts.clear();
     resetTopHitCounts();
-    buildPegRotors();resetTerritory();initializeFixedBallPool();simulationElapsed=0;autoPauseTriggered=false;paused=false;simAccumulator=0;
+    buildPegRotors();resetTerritory();initializeFixedBallPool();simulationElapsed=0;updateConverterLayout(0);autoPauseTriggered=false;paused=false;simAccumulator=0;
     if(UI.pauseBtn)UI.pauseBtn.textContent='暂停';if(UI.feed)UI.feed.innerHTML='';
     updateBaseTextCaches();
     log('战场已重置：四方恢复存活，基础护盾恢复为 10M；实心护盾覆盖区保护基地核心，最中心白色圆点被敌方弹丸命中即淘汰；火力生成不设玩法上限。');
@@ -3696,6 +3733,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v135 已启动：五个火力兑现端口从开局 0:1:1:1:0 线性过渡，在模拟 15:00 达到 1:1:1:1:1 后固定；物理边界、命中归属与标签同步更新。');
   log('Demo v134 已启动：领土亮度更新提高到每秒 10 次；外圈转盘碰撞点与弹珠进行双向角动量交换，转盘受击后由驱动力平滑回归基础转速。');
   log('Demo v133 已启动：移除领土临界随机闪点；新占领方格在 0 秒以原亮度 200% 闪现，0.5 秒回落至原亮度后继续执行 30 秒衰减。');
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
