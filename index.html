@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v121 · Matched Marble Radius</title>
+  <title>像素领土战争 Demo v122 · Reference UI Polish</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -209,6 +209,198 @@
     @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:19/24;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
     @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
     @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:19/24}}
+
+    /* v122 UI 自检第 1 轮：参考图的深海军蓝底色与高纯度青色结构光。仅改视觉属性。 */
+    :root{
+      --text:#eaf8ff;
+      --muted:#7fa7bd;
+      --cyan:#18e7ff;
+      --blue:#197dff;
+      --violet:#6074ff;
+      --magenta:#ef4bc6;
+      --danger:#ff6075;
+      --panel:#020a16;
+      --line:rgba(41,210,255,.34);
+    }
+    body{
+      background:
+        radial-gradient(circle at 10% 2%,rgba(0,111,184,.19),transparent 31%),
+        radial-gradient(circle at 88% 7%,rgba(0,83,160,.14),transparent 34%),
+        radial-gradient(circle at 52% 106%,rgba(0,218,255,.07),transparent 42%),
+        linear-gradient(180deg,#020915 0%,#010611 54%,#00040b 100%);
+    }
+    body::before{
+      opacity:.31;
+      background:
+        repeating-linear-gradient(0deg,rgba(160,231,255,.014) 0,rgba(160,231,255,.014) 1px,transparent 1px,transparent 4px),
+        repeating-linear-gradient(90deg,transparent 0,transparent 79px,rgba(32,204,255,.018) 80px);
+    }
+    body::after{background:radial-gradient(ellipse at center,transparent 48%,rgba(0,3,10,.67) 100%)}
+    .topbar,.counter-card,.data-strip-group,.panel{
+      border-color:rgba(30,204,255,.46);
+      background:linear-gradient(180deg,rgba(5,19,36,.975),rgba(1,8,19,.99));
+      box-shadow:0 0 24px rgba(0,142,214,.11),inset 0 0 38px rgba(0,124,196,.065);
+    }
+    .topbar::before{
+      background:linear-gradient(90deg,#11e5ff 0 27%,#1588ff 43%,transparent 55%,#1688ff 76%,#12e6ff 100%);
+      box-shadow:0 0 15px rgba(20,223,255,.72);
+    }
+    .panel-left,.panel-war{--panel-accent:#18e8ff;--panel-accent-2:#197dff}
+    .canvas-wrap,.power-chart-wrap{
+      border-color:rgba(30,205,255,.50);
+      background:#010713;
+      box-shadow:inset 0 0 52px rgba(0,92,166,.22),0 0 14px rgba(0,181,255,.10);
+    }
+
+    /* v122 UI 自检第 2 轮：强化标题、编号与规则信息层级，不改变文字尺寸和容器几何。 */
+    h1{
+      color:#f1fbff;
+      font-weight:800;
+      text-shadow:0 0 8px rgba(255,255,255,.18),0 0 18px rgba(15,217,255,.34);
+    }
+    .logo{
+      border-color:#1ceaff;
+      background:radial-gradient(circle,rgba(21,102,145,.58),rgba(2,18,33,.96));
+      box-shadow:0 0 18px rgba(22,226,255,.42),inset 0 0 14px rgba(20,223,255,.20);
+    }
+    .logo span{color:#f4fdff;text-shadow:0 0 5px #fff,0 0 13px #15ddff}
+    .counter-title,.data-strip-title{
+      color:#96c7da;
+      font-weight:700;
+      text-shadow:0 0 10px rgba(23,215,255,.20);
+    }
+    .counter-card,.data-strip-group{position:relative}
+    .counter-card::before,.data-strip-group::before{
+      content:"";position:absolute;left:0;right:18%;top:0;height:1px;pointer-events:none;
+      background:linear-gradient(90deg,#1ce7ff,rgba(28,137,255,.56),transparent);
+      box-shadow:0 0 8px rgba(27,223,255,.58);
+    }
+    .counter-chip,.badge{
+      color:#dff8ff;
+      border-color:rgba(62,159,201,.56);
+      background:linear-gradient(180deg,rgba(8,27,43,.88),rgba(2,12,25,.88));
+      text-shadow:0 0 8px rgba(26,216,255,.16);
+    }
+    .panel-head{
+      background:linear-gradient(90deg,rgba(8,47,69,.20),transparent 54%);
+      border-bottom:1px solid rgba(35,197,236,.13);
+    }
+    .panel-title{
+      color:#f3fcff;
+      font-weight:800;
+      text-shadow:0 0 8px rgba(255,255,255,.12),0 0 16px rgba(25,220,255,.28);
+    }
+    .panel-title::before{
+      background:rgba(11,83,112,.52);
+      border-color:#1aebff;
+      box-shadow:0 0 5px #22efff,0 0 12px rgba(24,231,255,.68),inset 0 0 6px rgba(85,241,255,.28);
+    }
+    .panel-title::after{color:#1de7ff;text-shadow:0 0 9px rgba(28,226,255,.55)}
+    .panel-note{color:#83a9bd}
+    .panel-index{
+      color:#b8efff;
+      border-color:rgba(38,216,255,.42);
+      background:linear-gradient(180deg,rgba(7,42,61,.88),rgba(2,15,29,.92));
+      text-shadow:0 0 8px rgba(28,226,255,.45);
+    }
+    .matrix-rule{
+      color:#bad9e6;
+      border-color:rgba(39,183,221,.34);
+      background:linear-gradient(90deg,rgba(8,59,82,.38),rgba(2,17,31,.82));
+      box-shadow:inset 0 1px rgba(77,226,255,.08);
+    }
+    .matrix-rule b{color:#28edff;text-shadow:0 0 7px rgba(33,231,255,.62)}
+
+    /* v122 UI 自检第 3 轮：强化卡片状态、按钮与图表仪器感。仅改表面材质。 */
+    .btn{
+      color:#dff8ff;
+      border-color:rgba(48,156,201,.66);
+      background:linear-gradient(180deg,rgba(10,39,59,.96),rgba(2,17,31,.98));
+      box-shadow:inset 0 1px rgba(109,232,255,.08),inset 0 0 18px rgba(7,118,169,.07);
+      text-shadow:0 0 8px rgba(30,221,255,.20);
+    }
+    .btn:hover{
+      border-color:#22ecff;
+      background:linear-gradient(180deg,rgba(12,62,82,.98),rgba(2,23,38,.98));
+      box-shadow:0 0 15px rgba(21,225,255,.22),inset 0 0 16px rgba(16,197,231,.09);
+    }
+    .btn.danger{
+      color:#ffc4cd;
+      border-color:rgba(255,83,108,.48);
+      background:linear-gradient(180deg,rgba(62,16,30,.72),rgba(24,6,17,.90));
+      text-shadow:0 0 8px rgba(255,78,105,.26);
+    }
+    .speed{accent-color:#19e4ff;filter:drop-shadow(0 0 4px rgba(24,221,255,.40))}
+    .faction-btn,.weapon-btn{
+      border-color:rgba(43,128,168,.64);
+      background:
+        linear-gradient(180deg,rgba(7,30,47,.96),rgba(1,13,26,.99));
+      box-shadow:inset 0 1px rgba(109,232,255,.07),inset 0 0 18px rgba(0,105,157,.045);
+    }
+    .faction-btn::before{box-shadow:0 0 5px var(--c),0 0 12px color-mix(in srgb,var(--c) 56%,transparent)}
+    .faction-btn.active{
+      border-color:color-mix(in srgb,var(--c) 82%,#bff8ff);
+      background:linear-gradient(180deg,color-mix(in srgb,var(--c) 12%,#071b2c),rgba(1,13,25,.98));
+      box-shadow:inset 2px 0 var(--c),inset 0 0 20px color-mix(in srgb,var(--c) 13%,transparent),0 0 12px color-mix(in srgb,var(--c) 15%,transparent);
+    }
+    .weapon-btn::before{
+      background:linear-gradient(90deg,transparent,#2beaff 44%,#7d9dff 58%,transparent);
+      opacity:.82;
+      box-shadow:0 0 8px rgba(32,225,255,.42);
+    }
+    .weapon-btn:hover{
+      border-color:#28eaff;
+      background:linear-gradient(180deg,rgba(9,50,68,.96),rgba(1,17,31,.99));
+      box-shadow:inset 0 0 22px rgba(24,215,255,.10),0 0 12px rgba(20,217,255,.12);
+    }
+    .weapon-btn.active{
+      border-color:#f04bce;
+      background:
+        radial-gradient(circle at 50% 12%,rgba(250,80,211,.22),transparent 55%),
+        linear-gradient(180deg,rgba(65,17,73,.92),rgba(7,17,35,.99));
+      box-shadow:inset 2px 0 #f253d1,inset 0 0 24px rgba(237,62,207,.16),0 0 15px rgba(238,59,207,.18);
+    }
+    .weapon-icon{color:#ddfaff;text-shadow:0 0 5px rgba(255,255,255,.18),0 0 13px rgba(27,224,255,.58)}
+    .weapon-btn.active .weapon-icon{color:#fff;text-shadow:0 0 6px #fff,0 0 15px #f448d3}
+    .weapon-stock{color:#83aabd}
+    .power-chart-wrap{
+      background:
+        repeating-linear-gradient(0deg,transparent 0 31px,rgba(24,169,221,.07) 32px),
+        repeating-linear-gradient(90deg,transparent 0 79px,rgba(24,169,221,.055) 80px),
+        linear-gradient(180deg,rgba(2,15,29,.98),rgba(1,8,19,.99));
+      box-shadow:inset 0 0 28px rgba(0,105,173,.16),0 0 12px rgba(18,218,255,.08);
+    }
+
+    /* v122 UI 自检第 5 轮：统一角标与微光语言，完成参考图风格收束。 */
+    .panel::before{opacity:.96;filter:drop-shadow(0 0 8px rgba(26,225,255,.68))}
+    .panel::after{border-color:rgba(43,204,239,.20)}
+    .canvas-wrap::before{opacity:.18}
+    .canvas-wrap::after{
+      background:
+        linear-gradient(#29ecff,#29ecff) left top/30px 1px no-repeat,
+        linear-gradient(#29ecff,#29ecff) left top/1px 30px no-repeat,
+        linear-gradient(#208eff,#208eff) right top/30px 1px no-repeat,
+        linear-gradient(#208eff,#208eff) right top/1px 30px no-repeat,
+        linear-gradient(#208eff,#208eff) left bottom/30px 1px no-repeat,
+        linear-gradient(#208eff,#208eff) left bottom/1px 30px no-repeat,
+        linear-gradient(#29ecff,#29ecff) right bottom/30px 1px no-repeat,
+        linear-gradient(#29ecff,#29ecff) right bottom/1px 30px no-repeat;
+      filter:drop-shadow(0 0 6px rgba(34,227,255,.82));
+      opacity:.88;
+    }
+    .canvas-code{
+      color:rgba(178,234,255,.72);
+      text-shadow:0 0 5px rgba(255,255,255,.20),0 0 10px rgba(28,224,255,.58);
+    }
+    .topbar::after{
+      opacity:.58;
+      background:repeating-linear-gradient(90deg,#1beaff 0 22px,transparent 22px 31px);
+      box-shadow:0 0 8px rgba(24,224,255,.28);
+    }
+    .data-strip-group,.counter-card{
+      box-shadow:0 0 18px rgba(0,151,218,.09),inset 0 0 24px rgba(0,106,166,.075);
+    }
+    .power-chart-group .faction-btn:not(.active){filter:saturate(.84)}
   </style>
 </head>
 <body>
@@ -218,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v121</h1>
+        <h1>像素领土战争 · 战场态势 v122</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -298,10 +490,10 @@
 <script>
 (() => {
   const FACTIONS=[
-    {name:'绿方',color:'#35ff9c',territory:'#075435',base:[.13,.14]},
-    {name:'红方',color:'#ff3d56',territory:'#65111f',base:[.87,.14]},
-    {name:'黄方',color:'#ffd02f',territory:'#75530a',base:[.13,.86]},
-    {name:'蓝方',color:'#2d91ff',territory:'#0a3978',base:[.87,.86]}
+    {name:'绿方',color:'#35ff9c',territory:'#08704a',base:[.13,.14]},
+    {name:'红方',color:'#ff3d56',territory:'#79152a',base:[.87,.14]},
+    {name:'黄方',color:'#ffd02f',territory:'#85620d',base:[.13,.86]},
+    {name:'蓝方',color:'#2d91ff',territory:'#0a4b95',base:[.87,.86]}
   ];
   const WEAPONS={scatter:{name:'霰弹',icon:'✦'},machine:{name:'机枪',icon:'▥'},shield:{name:'护盾',icon:'⬡'},orb:{name:'大球',icon:'●'},sniper:{name:'狙击',icon:'⌖'}};
   const WEAPON_COLORS={scatter:'#f34cff',machine:'#22dfff',shield:'#40e7ff',orb:'#b05cff',sniper:'#7e8cff'};
@@ -753,14 +945,14 @@
   function buildLeftStatic(){
     const c=leftStaticCtx;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,LV.w,LV.h);
     const g=c.createRadialGradient(LV.w*.5,LV.h*.32,20,LV.w*.5,LV.h*.45,LV.h*.78);
-    g.addColorStop(0,'#071a35');g.addColorStop(.46,'#031022');g.addColorStop(1,'#01050d');
+    g.addColorStop(0,'#082240');g.addColorStop(.46,'#03152b');g.addColorStop(1,'#010711');
     c.fillStyle=g;c.fillRect(0,0,LV.w,LV.h);
     for(let x=0;x<=LV.w;x+=20){
-      c.strokeStyle=x%100===0?'rgba(61,154,238,.18)':'rgba(45,115,185,.065)';
+      c.strokeStyle=x%100===0?'rgba(55,186,244,.24)':'rgba(42,138,204,.085)';
       c.lineWidth=x%100===0?1.1:.7;c.beginPath();c.moveTo(x,0);c.lineTo(x,LV.h);c.stroke();
     }
     for(let y=0;y<=LV.h;y+=20){
-      c.strokeStyle=y%100===0?'rgba(61,154,238,.18)':'rgba(45,115,185,.065)';
+      c.strokeStyle=y%100===0?'rgba(55,186,244,.24)':'rgba(42,138,204,.085)';
       c.lineWidth=y%100===0?1.1:.7;c.beginPath();c.moveTo(0,y);c.lineTo(LV.w,y);c.stroke();
     }
   }
@@ -768,17 +960,17 @@
   function buildBattleStatic(){
     const c=battleStaticCtx;c.clearRect(0,0,WV.w,WV.h);
     const bg=c.createRadialGradient(WV.w*.5,WV.h*.5,20,WV.w*.5,WV.h*.5,WV.w*.76);
-    bg.addColorStop(0,'#071429');bg.addColorStop(.42,'#031020');bg.addColorStop(1,'#01040b');
+    bg.addColorStop(0,'#081a31');bg.addColorStop(.42,'#031329');bg.addColorStop(1,'#010711');
     c.fillStyle=bg;c.fillRect(0,0,WV.w,WV.h);
     c.fillStyle='#a9e9ff';
-    for(const star of hudStars){c.globalAlpha=.15;c.beginPath();c.arc(star.x,star.y,star.r,0,TAU);c.fill();}
+    for(const star of hudStars){c.globalAlpha=.22;c.beginPath();c.arc(star.x,star.y,star.r,0,TAU);c.fill();}
     c.globalAlpha=1;
     for(let x=0;x<=WV.w;x+=25){
-      const major=x%100===0;c.strokeStyle=major?'rgba(90,192,255,.16)':'rgba(67,147,220,.052)';c.lineWidth=major?1.15:.65;
+      const major=x%100===0;c.strokeStyle=major?'rgba(75,202,255,.21)':'rgba(55,154,224,.072)';c.lineWidth=major?1.15:.65;
       c.beginPath();c.moveTo(x,0);c.lineTo(x,WV.h);c.stroke();
     }
     for(let y=0;y<=WV.h;y+=25){
-      const major=y%100===0;c.strokeStyle=major?'rgba(90,192,255,.16)':'rgba(67,147,220,.052)';c.lineWidth=major?1.15:.65;
+      const major=y%100===0;c.strokeStyle=major?'rgba(75,202,255,.21)':'rgba(55,154,224,.072)';c.lineWidth=major?1.15:.65;
       c.beginPath();c.moveTo(0,y);c.lineTo(WV.w,y);c.stroke();
     }
   }
@@ -2713,9 +2905,11 @@
       const series=powerHistory[f];
       if(series.length<1)continue;
       pctx.strokeStyle=FACTIONS[f].color; pctx.lineWidth=(selectedFaction===f?2.6:1.5)*dpr; pctx.globalAlpha=selectedFaction===f?1:.8;
+      pctx.shadowColor=FACTIONS[f].color; pctx.shadowBlur=(selectedFaction===f?7:3)*dpr;
       pctx.beginPath();
       series.forEach((pt,i)=>{const x=xFor(pt.t), y=yFor(pt.v||1); if(i===0)pctx.moveTo(x,y); else pctx.lineTo(x,y);});
       pctx.stroke();
+      pctx.shadowBlur=0;
       const lastPt=series[series.length-1]; const lx=xFor(lastPt.t), ly=yFor(lastPt.v||1);
       pctx.fillStyle=FACTIONS[f].color; pctx.beginPath(); pctx.arc(lx,ly,(selectedFaction===f?3.6:2.6)*dpr,0,Math.PI*2); pctx.fill();
     }
@@ -2842,7 +3036,7 @@
     lctx.globalAlpha=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;lctx.lineWidth=1;lctx.lineCap='butt';lctx.lineJoin='miter';lctx.setLineDash([]);
     lctx.drawImage(leftStaticCanvas,0,0);
     const sweep=(t*90)%LV.h;
-    const scan=lctx.createLinearGradient(0,sweep-35,0,sweep+35);scan.addColorStop(0,'transparent');scan.addColorStop(.5,'rgba(42,215,255,.028)');scan.addColorStop(1,'transparent');
+    const scan=lctx.createLinearGradient(0,sweep-35,0,sweep+35);scan.addColorStop(0,'transparent');scan.addColorStop(.5,'rgba(42,223,255,.048)');scan.addColorStop(1,'transparent');
     lctx.fillStyle=scan;lctx.fillRect(0,Math.max(0,sweep-35),LV.w,70);
 
     // 区域名称进入物理场左侧的独立信息轨道，不再覆盖墙体、弹珠和入口。
@@ -2858,8 +3052,8 @@
 
     // 区域框与角标。
     function zoneFrame(x,y,w,h,color){
-      lctx.save();lctx.strokeStyle=color;lctx.globalAlpha=.18;lctx.lineWidth=.9;lctx.strokeRect(x,y,w,h);
-      lctx.globalAlpha=.48;lctx.lineWidth=1.5;
+      lctx.save();lctx.strokeStyle=color;lctx.globalAlpha=.24;lctx.lineWidth=.9;lctx.strokeRect(x,y,w,h);
+      lctx.globalAlpha=.64;lctx.lineWidth=1.5;
       const c=10;
       [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]].forEach(([cx,cy,sx,sy])=>{
         lctx.beginPath();lctx.moveTo(cx,cy+sy*c);lctx.lineTo(cx,cy);lctx.lineTo(cx+sx*c,cy);lctx.stroke();
@@ -2872,16 +3066,16 @@
     lctx.save();
     const wallTop=MATRIX_TOP_WALL_Y, wallBottom=MATRIX_BOTTOM_WALL_Y;
     const wallGrad=lctx.createLinearGradient(0,wallTop,0,wallBottom);
-    wallGrad.addColorStop(0,'rgba(58,229,255,.92)');
-    wallGrad.addColorStop(.5,'rgba(119,129,255,.74)');
-    wallGrad.addColorStop(1,'rgba(49,230,255,.92)');
-    lctx.strokeStyle=wallGrad; lctx.lineWidth=1.8; lctx.shadowColor='#33dfff'; lctx.shadowBlur=7;
+    wallGrad.addColorStop(0,'rgba(75,239,255,.98)');
+    wallGrad.addColorStop(.5,'rgba(62,150,255,.82)');
+    wallGrad.addColorStop(1,'rgba(55,235,255,.98)');
+    lctx.strokeStyle=wallGrad; lctx.lineWidth=1.8; lctx.shadowColor='#26e7ff'; lctx.shadowBlur=10;
     [[PLAYFIELD.left,wallTop,PLAYFIELD.left,wallBottom],[PLAYFIELD.right,wallTop,PLAYFIELD.right,wallBottom],[PLAYFIELD.left,wallTop,PLAYFIELD.right,wallTop],[PLAYFIELD.left,wallBottom,PLAYFIELD.right,wallBottom]].forEach(([x1,y1,x2,y2])=>{lctx.beginPath(); lctx.moveTo(x1,y1); lctx.lineTo(x2,y2); lctx.stroke();});
     lctx.restore();
 
     // v118：只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
     const drawPeg=p=>{
-      lctx.save();lctx.shadowColor='#bdeeff';lctx.shadowBlur=4;lctx.fillStyle='#7f8f9d';lctx.strokeStyle='rgba(223,247,255,.58)';lctx.lineWidth=.7;
+      lctx.save();lctx.shadowColor='#bdeeff';lctx.shadowBlur=6;lctx.fillStyle='#91a7b6';lctx.strokeStyle='rgba(233,251,255,.76)';lctx.lineWidth=.7;
       lctx.beginPath();lctx.arc(p.x,p.y,p.r,0,TAU);lctx.fill();lctx.stroke();
       lctx.shadowBlur=0;lctx.fillStyle='rgba(255,255,255,.72)';lctx.beginPath();lctx.arc(p.x-p.r*.32,p.y-p.r*.35,p.r*.24,0,TAU);lctx.fill();lctx.restore();
     };
@@ -3096,9 +3290,9 @@
     wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);wctx.clearRect(0,0,WV.w,WV.h);
     const t=performance.now()/1000;
     wctx.drawImage(battleStaticCanvas,0,0);
-    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.92;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
-    wctx.fillStyle='rgba(0,5,14,.18)';wctx.fillRect(0,0,WV.w,WV.h);
-    wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.88;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
+    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
+    wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
 
@@ -3106,10 +3300,10 @@
     for(let f=0;f<4;f++){
       let hasProjectiles=false;wctx.beginPath();
       for(const p of projectiles){if(p.faction!==f||p.kind==='orb'||p.kind==='machine')continue;const r=p.r*1.45;wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasProjectiles=true;}
-      if(hasProjectiles){wctx.globalAlpha=.66;wctx.fillStyle=FACTIONS[f].color;wctx.fill();}
+      if(hasProjectiles){wctx.globalAlpha=.76;wctx.fillStyle=FACTIONS[f].color;wctx.fill();}
       let hasMachine=false;wctx.beginPath();
       for(const p of projectiles){if(p.faction!==f||p.kind!=='machine')continue;const r=p.r*.92;wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachine=true;}
-      if(hasMachine){wctx.globalAlpha=.24;wctx.fillStyle=FACTIONS[f].color;wctx.fill();}
+      if(hasMachine){wctx.globalAlpha=.32;wctx.fillStyle=FACTIONS[f].color;wctx.fill();}
     }
     wctx.restore();
 
@@ -3327,6 +3521,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v122 已启动：参考战术矩阵图完成五轮纯视觉优化；布局比例、元素位置和游戏逻辑保持不变。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
