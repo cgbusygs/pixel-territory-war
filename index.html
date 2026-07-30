@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v128 · Graded Fiber Nodes</title>
+  <title>像素领土战争 Demo v129 · Boundary Sparkles</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v128</h1>
+        <h1>像素领土战争 · 战场态势 v129</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -663,7 +663,7 @@
   let lastPowerHistoryTime=-1;
   const AUTO_PAUSE_SECONDS=360;
   let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, autoPauseTriggered=false, last=performance.now();
-  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
+  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[], boundarySparkles=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
   const INITIAL_MACHINE_FIREPOWER=400000;
@@ -695,6 +695,8 @@
   const MACHINE_JITTER_RATE_B=TUNING.machine.jitterRateB;
   // v38：机枪每次触发消耗比例在 v37 基础上再次减半；同时降低弹体、核心、尾迹与碰撞火花亮度。
   const MAX_EFFECT_PARTICLES=520;
+  const MAX_BOUNDARY_SPARKLES=120;
+  const BOUNDARY_SPARKLE_STEP=.05;
   // 数值枚举和位标记替代每帧 Set<string> 查询。
   const FX_TYPE=Object.freeze({GENERIC:0,SHIELD_SPARK:1,ANNIHILATION_SPARK:2,SHIELD_HIT:3,ANNIHILATION:4,IMPACT:5,BASE_HIT:6,PROJECTILE_HIT:7});
   const FX_FLAG_SPARK=1,FX_FLAG_EXPANDING=2;
@@ -760,7 +762,7 @@
   let dirtyTerritoryTileCount=0;
   const impactMaskCache=new Map();
   const IMPACT_MASK_CACHE_MAX=TUNING.cache.impactMaskMaxEntries;
-  let territorySimCarry=0,territoryUploadCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,hudTextCarry=HUD_TEXT_STEP;
+  let territorySimCarry=0,territoryUploadCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,boundarySparkleSpawnCarry=0,hudTextCarry=HUD_TEXT_STEP;
   const frameTrailSegments=[];
   const BALL_HASH_CELL=TUNING.collision.ballHashCell;
   const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
@@ -1105,12 +1107,41 @@
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
     territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
+    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;boundarySparkleSpawnCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;boundarySparkles.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
+    }
+  }
+
+  function spawnBoundarySparkles(dt){
+    boundarySparkleSpawnCarry+=dt;
+    if(boundarySparkleSpawnCarry<BOUNDARY_SPARKLE_STEP||boundarySparkles.length>=MAX_BOUNDARY_SPARKLES)return;
+    boundarySparkleSpawnCarry%=BOUNDARY_SPARKLE_STEP;
+    const wanted=Math.min(2,MAX_BOUNDARY_SPARKLES-boundarySparkles.length);
+    const cellW=WV.w/GRID_W,cellH=WV.h/GRID_H;
+    let spawned=0;
+    for(let attempt=0;attempt<480&&spawned<wanted;attempt++){
+      const gx=1+Math.floor(Math.random()*(GRID_W-2));
+      const gy=1+Math.floor(Math.random()*(GRID_H-2));
+      const horizontal=Math.random()<.5;
+      const nx=gx+(horizontal?1:0),ny=gy+(horizontal?0:1);
+      const index=gy*GRID_W+gx,otherIndex=ny*GRID_W+nx;
+      const a=owner[index],b=owner[otherIndex];
+      if(a===b||(a===255&&b===255))continue;
+      let faction=a,ownedIndex=index,adjacentIndex=otherIndex;
+      if(a===255||(b!==255&&Math.random()<.5)){faction=b;ownedIndex=otherIndex;adjacentIndex=index;}
+      if(faction===255)continue;
+      const duration=.5+Math.random()*.7;
+      boundarySparkles.push({
+        x:horizontal?(gx+1)*cellW:(gx+.12+Math.random()*.76)*cellW,
+        y:horizontal?(gy+.12+Math.random()*.76)*cellH:(gy+1)*cellH,
+        faction,ownedIndex,adjacentIndex,life:duration,maxLife:duration,
+        size:.65+Math.random()*1.05
+      });
+      spawned++;
     }
   }
 
@@ -2734,6 +2765,14 @@
     effectUpdateCarry+=dt;
     if(effectUpdateCarry>=EFFECT_UPDATE_STEP){
       const effectDt=effectUpdateCarry;effectUpdateCarry%=EFFECT_UPDATE_STEP;
+      spawnBoundarySparkles(effectDt);
+      for(let i=boundarySparkles.length-1;i>=0;i--){
+        const sparkle=boundarySparkles[i];
+        sparkle.life-=effectDt;
+        if(sparkle.life<=0||owner[sparkle.ownedIndex]!==sparkle.faction||owner[sparkle.adjacentIndex]===sparkle.faction){
+          const last=boundarySparkles.pop();if(i<boundarySparkles.length)boundarySparkles[i]=last;
+        }
+      }
       for(let i=pulses.length-1;i>=0;i--){
         const p=pulses[i];
         p.age=(p.age||0)+effectDt;
@@ -3299,6 +3338,21 @@
     wctx.drawImage(battleStaticCanvas,0,0);
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
+    if(boundarySparkles.length){
+      const decay=simulationElapsed<=30?1:Math.max(.25,1-(simulationElapsed-30)*.025);
+      wctx.save();wctx.globalCompositeOperation='lighter';
+      for(const sparkle of boundarySparkles){
+        const life=Math.max(0,sparkle.life/sparkle.maxLife);
+        const brightness=life*life*decay;
+        if(brightness<.012)continue;
+        const factionColor=FACTIONS[sparkle.faction].color;
+        wctx.globalAlpha=.13*brightness;wctx.fillStyle=factionColor;
+        wctx.beginPath();wctx.arc(sparkle.x,sparkle.y,sparkle.size*3.2,0,TAU);wctx.fill();
+        wctx.globalAlpha=.94*brightness;wctx.fillStyle=mixHexColors(factionColor,'#ffffff',.7);
+        wctx.beginPath();wctx.arc(sparkle.x,sparkle.y,sparkle.size*.68,0,TAU);wctx.fill();
+      }
+      wctx.restore();
+    }
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
@@ -3572,6 +3626,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
+  log('Demo v129 已启动：异色领土临界网格随机出现阵营色闪点；单点由亮到暗，30 秒后全局亮度在 30 秒内衰减至 25% 并保持。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
