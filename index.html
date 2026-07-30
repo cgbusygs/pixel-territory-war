@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v124 · Territory Filament Trails</title>
+  <title>像素领土战争 Demo v125 · Projectile-Locked Filaments</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -410,7 +410,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v124</h1>
+        <h1>像素领土战争 · 战场态势 v125</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -779,11 +779,6 @@
   trailCanvas.height=Math.round(WV.h*TRAIL_SCALE);
   const trailCtx=trailCanvas.getContext('2d',{alpha:true,desynchronized:true});
   trailCtx.lineCap='round';trailCtx.lineJoin='round';
-  const machineTrailCanvas=document.createElement('canvas');
-  machineTrailCanvas.width=trailCanvas.width;
-  machineTrailCanvas.height=trailCanvas.height;
-  const machineTrailCtx=machineTrailCanvas.getContext('2d',{alpha:true,desynchronized:true});
-  machineTrailCtx.lineCap='round';machineTrailCtx.lineJoin='round';
 
   // 左侧矩阵背景网格和右侧战场背景均离屏预渲染。
   const leftStaticCanvas=document.createElement('canvas');
@@ -1112,7 +1107,6 @@
     territoryCtx.putImageData(territoryImage,0,0);
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
-    machineTrailCtx.clearRect(0,0,machineTrailCanvas.width,machineTrailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
@@ -1984,7 +1978,6 @@
     p.jitterPhase=(p.visualSeed*.61803398875+d.faction*1.73)%TAU;
     p.jitterPhaseB=(p.visualSeed*.271828+d.faction*2.41+1.2)%TAU;
     p.jitterHeading=0;
-    p.trailNodeTick=-1;
     p.id=nextProjectileId++;p.dead=false;p.bounces=0;
     p.orbShieldContacts=0;
     projectiles.push(p);
@@ -2097,9 +2090,6 @@
     trailCtx.save();trailCtx.globalCompositeOperation='destination-out';
     trailCtx.fillStyle=`rgba(0,0,0,${Math.min(.24,1-Math.exp(-dt*5.4))})`;
     trailCtx.fillRect(0,0,trailCanvas.width,trailCanvas.height);trailCtx.restore();
-    machineTrailCtx.save();machineTrailCtx.globalCompositeOperation='destination-out';
-    machineTrailCtx.fillStyle=`rgba(0,0,0,${Math.min(.08,1-Math.exp(-dt*.72))})`;
-    machineTrailCtx.fillRect(0,0,machineTrailCanvas.width,machineTrailCanvas.height);machineTrailCtx.restore();
   }
 
   function isOccupiedWarPoint(x,y){
@@ -2109,21 +2099,9 @@
   }
 
   function pushTrailSegment(p){
-    const kindCode=p.kind==='machine'?0:p.kind==='orb'?1:2;
-    if(kindCode===0&&(
-      !isOccupiedWarPoint(p.prevX,p.prevY)||
-      !isOccupiedWarPoint((p.prevX+p.x)*.5,(p.prevY+p.y)*.5)||
-      !isOccupiedWarPoint(p.x,p.y)
-    ))return;
-    let node=0;
-    if(kindCode===0){
-      const nodeTick=Math.floor(simulationElapsed*9+p.id*.37);
-      if(nodeTick!==p.trailNodeTick){
-        p.trailNodeTick=nodeTick;
-        node=((nodeTick+p.id*3)%7)===0?1:0;
-      }
-    }
-    frameTrailSegments.push(p.prevX,p.prevY,p.x,p.y,p.faction,kindCode,p.id,node);
+    if(p.kind==='machine')return;
+    const kindCode=p.kind==='orb'?1:2;
+    frameTrailSegments.push(p.prevX,p.prevY,p.x,p.y,p.faction,kindCode,p.id,0);
   }
 
   function strokeTrailGroup(faction,kindCode,width,alpha,color){
@@ -2137,39 +2115,6 @@
     if(count){trailCtx.globalAlpha=alpha;trailCtx.strokeStyle=color;trailCtx.lineWidth=width*scale;trailCtx.stroke();}
   }
 
-  function strokeMachineFilaments(width,alpha,color,segmented=false){
-    const scale=TRAIL_SCALE;let count=0;
-    machineTrailCtx.beginPath();
-    for(let i=0;i<frameTrailSegments.length;i+=8){
-      if(frameTrailSegments[i+5]!==0)continue;
-      if(segmented&&((Math.floor((frameTrailSegments[i+2]+frameTrailSegments[i+3])*.085)+frameTrailSegments[i+6]*5)%4===0))continue;
-      machineTrailCtx.moveTo(frameTrailSegments[i]*scale,frameTrailSegments[i+1]*scale);
-      machineTrailCtx.lineTo(frameTrailSegments[i+2]*scale,frameTrailSegments[i+3]*scale);count++;
-    }
-    if(count){
-      machineTrailCtx.globalAlpha=alpha;machineTrailCtx.strokeStyle=color;
-      machineTrailCtx.lineWidth=width*scale;machineTrailCtx.stroke();
-    }
-  }
-
-  function drawMachineTrailNodes(){
-    const scale=TRAIL_SCALE;
-    machineTrailCtx.beginPath();
-    for(let i=0;i<frameTrailSegments.length;i+=8){
-      if(frameTrailSegments[i+5]!==0||frameTrailSegments[i+7]!==1)continue;
-      const x=frameTrailSegments[i+2]*scale,y=frameTrailSegments[i+3]*scale,r=5.4*scale;
-      machineTrailCtx.moveTo(x+r,y);machineTrailCtx.arc(x,y,r,0,TAU);
-    }
-    machineTrailCtx.globalAlpha=.22;machineTrailCtx.fillStyle='#168fff';machineTrailCtx.fill();
-    machineTrailCtx.beginPath();
-    for(let i=0;i<frameTrailSegments.length;i+=8){
-      if(frameTrailSegments[i+5]!==0||frameTrailSegments[i+7]!==1)continue;
-      const x=frameTrailSegments[i+2]*scale,y=frameTrailSegments[i+3]*scale,r=2.0*scale;
-      machineTrailCtx.moveTo(x+r,y);machineTrailCtx.arc(x,y,r,0,TAU);
-    }
-    machineTrailCtx.globalAlpha=.92;machineTrailCtx.fillStyle='#e8fbff';machineTrailCtx.fill();
-  }
-
   function renderTrailBatch(dt){
     fadeTrailLayer(dt);trailCtx.save();trailCtx.globalCompositeOperation='lighter';trailCtx.lineCap='round';trailCtx.lineJoin='round';
     for(let f=0;f<4;f++){
@@ -2178,12 +2123,7 @@
       strokeTrailGroup(f,2,2.5,.32,color);
     }
     trailCtx.restore();
-    machineTrailCtx.save();machineTrailCtx.globalCompositeOperation='lighter';
-    strokeMachineFilaments(4.8,.045,'#00439c');
-    strokeMachineFilaments(1.7,.11,'#0876db');
-    strokeMachineFilaments(.58,.42,'#58baff',true);
-    drawMachineTrailNodes();
-    machineTrailCtx.restore();frameTrailSegments.length=0;
+    frameTrailSegments.length=0;
   }
 
   function releaseProjectile(index){
@@ -3360,7 +3300,6 @@
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
-    wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.92;wctx.imageSmoothingEnabled=true;wctx.drawImage(machineTrailCanvas,0,0,WV.w,WV.h);wctx.restore();
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
 
@@ -3370,6 +3309,22 @@
       for(const p of projectiles){if(p.faction!==f||p.kind==='orb'||p.kind==='machine')continue;const r=p.r*1.45;wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasProjectiles=true;}
       if(hasProjectiles){wctx.globalAlpha=.76;wctx.fillStyle=FACTIONS[f].color;wctx.fill();}
     }
+    wctx.restore();
+
+    const strokeMachineVelocityTails=(width,alpha,color)=>{
+      let count=0;wctx.beginPath();
+      for(const p of projectiles){
+        if(p.kind!=='machine'||!isOccupiedWarPoint(p.x,p.y))continue;
+        const speed=Math.hypot(p.vx,p.vy)||1,tailLength=18;
+        const x1=p.x-p.vx/speed*tailLength,y1=p.y-p.vy/speed*tailLength;
+        if(!isOccupiedWarPoint(x1,y1)||!isOccupiedWarPoint((x1+p.x)*.5,(y1+p.y)*.5))continue;
+        wctx.moveTo(x1,y1);wctx.lineTo(p.x,p.y);count++;
+      }
+      if(count){wctx.globalAlpha=alpha;wctx.lineWidth=width;wctx.strokeStyle=color;wctx.stroke();}
+    };
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';wctx.lineJoin='round';
+    strokeMachineVelocityTails(3.2,.10,'#0064c8');
+    strokeMachineVelocityTails(.82,.68,'#83d7ff');
     wctx.restore();
 
     wctx.save();wctx.globalCompositeOperation='lighter';
@@ -3603,7 +3558,7 @@
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
   log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
-  log('Demo v124 已启动：取消机枪视觉续飞，冷蓝光丝与节点仅显示在已占领领土上；伤害、碰撞和弹药逻辑保持不变。');
+  log('Demo v125 已启动：机枪尾光只由存活子弹的当前位置和速度向量生成，随子弹同步运动并在子弹消失时立即清除。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
