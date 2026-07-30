@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>像素领土战争 Demo v120 · Unified Collision Energy</title>
+  <title>像素领土战争 Demo v121 · Matched Marble Radius</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -218,7 +218,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v120</h1>
+        <h1>像素领土战争 · 战场态势 v121</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -642,11 +642,9 @@
   const MULT_OUTER_WALL_CAP_HALF_WIDTH=MULT_SEPARATOR_HALF_WIDTH*.5;
 
   const PEG_DISC_POINT_RADIUS=4.1;
-  // v67：转盘轨道在 v66 当前基础上再放大到 110%，转速提升到当前的 150%，碰撞点半径保持原值。
+  // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值。
   const PEG_DISC_ORBIT_RADIUS=123.552;
   const PEG_DISC_SPIN_SPEED=3.15;
-  // v115：左上、左下转盘在 v114 基础上提升至 150%，右侧转盘保持原速。
-  const PEG_DISC_LEFT_SPIN_MULT=1.5;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
@@ -666,8 +664,8 @@
     }
   }
 
-  function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0,speedMultiplier=1){
-    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:PEG_DISC_SPIN_SPEED*spinDir*speedMultiplier,spinDir,pegs:[]};
+  function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0){
+    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:PEG_DISC_SPIN_SPEED*spinDir,spinDir,pegs:[]};
     const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0};
     rotor.pegs.push(centerPeg); targetPegs.push(centerPeg);
     for(let i=0;i<6;i++){
@@ -685,9 +683,9 @@
     const upperY=(BOARD.upperTop+BOARD.upperBottom)*.5;
     const lowerY=(BOARD.lowerTop+BOARD.lowerBottom)*.5;
     // 四个转盘按“逆 / 顺 / 逆 / 顺”旋转：左上、右上、左下、右下。
-    createPegRotor(upperRotors,upperPegs,leftX,upperY,-1,0.35,PEG_DISC_LEFT_SPIN_MULT);
+    createPegRotor(upperRotors,upperPegs,leftX,upperY,-1,0.35);
     createPegRotor(upperRotors,upperPegs,rightX,upperY,1,1.15);
-    createPegRotor(lowerRotors,lowerPegs,leftX,lowerY,-1,0.75,PEG_DISC_LEFT_SPIN_MULT);
+    createPegRotor(lowerRotors,lowerPegs,leftX,lowerY,-1,0.75);
     createPegRotor(lowerRotors,lowerPegs,rightX,lowerY,1,1.55);
   }
 
@@ -3031,7 +3029,8 @@
       }
       lctx.globalAlpha=1;lctx.shadowColor=FACTIONS[b.faction].color;lctx.shadowBlur=20;
       lctx.fillStyle='rgba(1,7,17,.96)';lctx.strokeStyle=FACTIONS[b.faction].color;lctx.lineWidth=2.4;
-      lctx.beginPath();lctx.arc(b.x,b.y,b.r+4,0,TAU);lctx.fill();lctx.stroke();
+      // v121：绘制半径与物理碰撞半径严格一致，消除视觉上的隔空碰撞。
+      lctx.beginPath();lctx.arc(b.x,b.y,b.r,0,TAU);lctx.fill();lctx.stroke();
       lctx.restore();
       drawBallValueLabel(b);
     }
@@ -3323,11 +3322,11 @@
   log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
   log('Demo v113 已启动：机枪转换口缩为原宽度 85%，护盾缩为 90%；释放宽度按霰弹、大球、狙击原有 1:2:1 比例重新分配。');
   log('Demo v114 已启动：机枪单发火力以 400K=100%、10M=50% 为锚点连续衰减，机枪池无限增大时趋近 25%。');
-  log('Demo v115 已启动：左上、左下转盘角速度提升至 v114 的 150%，右侧转盘保持原速。');
   log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
   log('Demo v118 已启动：撤销左侧转盘直径放大，四个转盘恢复统一尺寸；移除不参与弹珠碰撞的装饰外圈。');
   log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
   log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
+  log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
 })();
 </script>
