@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v140 · WebGL2 Territory</title>
+  <title>像素领土战争 Demo v141 · Match Capture</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -39,7 +39,7 @@
       content:"";position:fixed;inset:0;pointer-events:none;z-index:19;
       background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.58) 100%);
     }
-    button,input{font:inherit}
+    button,input,select{font:inherit}
     button{-webkit-tap-highlight-color:transparent}
     .app{max-width:1800px;margin:auto;position:relative;z-index:1}
     .topbar{
@@ -85,7 +85,15 @@
     .btn:hover{border-color:var(--cyan);box-shadow:0 0 16px rgba(25,223,255,.24);transform:translateY(-1px)}
     .btn.primary{background:linear-gradient(180deg,#116b94,#073858);border-color:#35e6ff;box-shadow:inset 0 0 18px rgba(37,215,255,.22),0 0 12px rgba(37,215,255,.13)}
     .btn.danger{border-color:#8a3045;color:#ffd1d7;background:linear-gradient(180deg,rgba(72,18,34,.75),rgba(28,7,17,.82))}
+    .btn:disabled{cursor:not-allowed;opacity:.38;filter:saturate(.45);transform:none;box-shadow:none}
     .speed{width:116px;accent-color:#1bdfff}
+    .record-controls{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid rgba(43,119,174,.52);background:rgba(2,12,25,.72);clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px))}
+    .record-controls select{height:30px;padding:0 25px 0 8px;color:#dff8ff;border:1px solid rgba(65,139,194,.72);border-radius:1px;outline:none;background:#071a2d;color-scheme:dark}
+    .record-controls select:focus-visible{border-color:var(--cyan);box-shadow:0 0 0 1px rgba(25,223,255,.28)}
+    .record-controls .btn{padding:7px 10px;font-size:10px;white-space:nowrap}
+    .record-controls .record-start{border-color:#18c9e8;color:#e9fdff}
+    .record-status{min-width:72px;text-align:center;white-space:nowrap}
+    .record-status.recording{color:#fff0f3;border-color:#ff5069;background:rgba(63,10,24,.82);box-shadow:0 0 12px rgba(255,62,88,.25)}
     .stage-169{--stage-pad:124px;width:min(100%,1680px,calc((100vh - var(--stage-pad))*16/9));aspect-ratio:16/9;margin:0 auto}.layout{display:grid;grid-template-columns:minmax(0,43fr) minmax(0,57fr);gap:12px;align-items:stretch;height:100%}
     .panel{
       min-width:0;padding:10px;position:relative;isolation:isolate;display:flex;flex-direction:column;height:100%;
@@ -207,8 +215,9 @@
     .boot-notice.hidden{display:none}
 
     @media(max-width:1120px){.stage-169{width:min(100%,calc((100vh - var(--stage-pad))*16/9))}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}.panel-head:not(.matrix-panel-head) .panel-title::after{display:none}.panel-note{max-width:55%;line-height:1.35}}
+    @media(min-width:721px){h1{white-space:nowrap}}
     @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:19/24;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
-    @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
+    @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.record-controls{width:100%;justify-content:flex-end;flex-wrap:wrap}.record-controls select{height:28px}.record-status{min-width:64px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
     @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:19/24}}
 
     /* v122 UI 自检第 1 轮：参考图的深海军蓝底色与高纯度青色结构光。仅改视觉属性。 */
@@ -411,14 +420,24 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v140</h1>
+        <h1>像素领土战争 · 战场态势 v141</h1>
       </div>
     </div>
     <div class="toolbar">
-      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="roundText">运行 00:00 / 06:00</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8 · 保底 0/3</span>
+      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="roundText">运行 00:00 · 无上限</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8 · 保底 0/3</span>
       <label for="speedRange">模拟速度</label>
       <input id="speedRange" class="speed" type="range" min="0.25" max="10" step="0.25" value="1" />
       <span class="badge" id="speedText">1.00×</span>
+      <div class="record-controls">
+        <label for="videoResolution">一局录像</label>
+        <select id="videoResolution" aria-label="录像分辨率">
+          <option value="1080">1920 × 1080 · 60 FPS</option>
+          <option value="2160">3840 × 2160 · 30 FPS</option>
+        </select>
+        <button id="recordGameBtn" class="btn record-start">录制一局</button>
+        <button id="stopRecordBtn" class="btn danger" disabled>结束并导出</button>
+        <span class="badge record-status" id="recordStatus">未录制</span>
+      </div>
       <button id="pauseBtn" class="btn">暂停</button>
       <button id="resetBtn" class="btn danger">重置</button>
     </div>
@@ -641,6 +660,10 @@
     launchBtn:document.getElementById('launchBtn'),
     speedRange:document.getElementById('speedRange'),
     speedText:document.getElementById('speedText'),
+    videoResolution:document.getElementById('videoResolution'),
+    recordGameBtn:document.getElementById('recordGameBtn'),
+    stopRecordBtn:document.getElementById('stopRecordBtn'),
+    recordStatus:document.getElementById('recordStatus'),
     multHitText:document.getElementById('multHitText'),
     converterHitText:document.getElementById('converterHitText'),
     offsetRange:document.getElementById('offsetRange'),
@@ -663,8 +686,9 @@
   const POWER_HISTORY_STEP=.25, POWER_HISTORY_MAX_POINTS=1200;
   const powerHistory=Array.from({length:4},()=>[]);
   let lastPowerHistoryTime=-1;
-  const AUTO_PAUSE_SECONDS=360;
-  let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, autoPauseTriggered=false, last=performance.now();
+  const MONOCHROME_WIN_SECONDS=10;
+  let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, last=performance.now();
+  let gameEnded=false,winnerFaction=-1,monochromeFaction=-1,monochromeHoldSeconds=0;
   const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
@@ -1507,6 +1531,7 @@
   }
 
   function relaunchSelectedFaction(){
+    if(gameEnded){log('本局已经结束，请重置战场后再重新投放弹珠。');return;}
     if(eliminated[selectedFaction]){log(`${FACTIONS[selectedFaction].name}已被淘汰，无法重新投放弹珠`,selectedFaction);return;}
     const selected=balls.filter(ball=>ball.faction===selectedFaction).sort((a,b)=>a.slot-b.slot);
     selected.forEach((ball,index)=>resetBallToTop(ball,{keepValue:false,useControls:true,delay:index*.14}));
@@ -3217,6 +3242,224 @@
     const total=Math.max(0,Math.floor(seconds)),m=Math.floor(total/60),sec=total%60;
     return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
   }
+
+  const VIDEO_PRESETS=Object.freeze({
+    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:14000000,label:'1080P60'}),
+    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:36000000,label:'4K30'})
+  });
+  const matchVideoCanvas=document.createElement('canvas');
+  const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
+  let matchRecorder=null,matchRecordingStream=null,matchRecordingWriter=null,matchRecordingFrame=0;
+  let matchRecordingStartWall=0,matchRecordingLastFrame=0,matchRecordingPreset=null,matchRecordingMime='',matchRecordingFileName='';
+  let matchRecordingPreparing=false,matchRecordingChunks=[],matchRecordingWriteChain=Promise.resolve(),matchRecordingWriteError=null;
+  let matchRecordingFinalReason='手动结束',matchRecordingStatusText='未录制',matchRecordingNaturalStopTimer=0;
+
+  function pickMatchVideoMimeType(){
+    if(typeof MediaRecorder==='undefined')return '';
+    const candidates=[
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4;codecs=avc1.42E01E',
+      'video/mp4'
+    ];
+    return candidates.find(type=>!MediaRecorder.isTypeSupported||MediaRecorder.isTypeSupported(type))||'';
+  }
+
+  function makeMatchVideoFileName(preset,mimeType){
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
+    const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
+    return `pixel-territory-war-v141-${preset.width}x${preset.height}-${stamp}.${extension}`;
+  }
+
+  function updateMatchRecordingControls(){
+    const active=!!matchRecorder&&matchRecorder.state!=='inactive';
+    if(UI.videoResolution)UI.videoResolution.disabled=active||matchRecordingPreparing;
+    if(UI.recordGameBtn)UI.recordGameBtn.disabled=active||matchRecordingPreparing;
+    if(UI.stopRecordBtn)UI.stopRecordBtn.disabled=!active;
+    if(UI.recordStatus){
+      const elapsed=active?Math.max(0,(performance.now()-matchRecordingStartWall)/1000):0;
+      UI.recordStatus.textContent=active?`REC ${formatClock(elapsed)} · ${matchRecordingPreset.label}`:matchRecordingStatusText;
+      UI.recordStatus.classList.toggle('recording',active);
+    }
+  }
+
+  function drawMatchVideoFrame(){
+    if(!matchVideoCtx||!matchRecordingPreset)return;
+    const ctx=matchVideoCtx,scale=matchRecordingPreset.width/1920;
+    ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#01040b';ctx.fillRect(0,0,matchVideoCanvas.width,matchVideoCanvas.height);
+    ctx.setTransform(scale,0,0,scale,0,0);
+    const baseW=1920,baseH=1080;
+
+    const background=ctx.createLinearGradient(0,0,0,baseH);
+    background.addColorStop(0,'#041020');background.addColorStop(.55,'#020813');background.addColorStop(1,'#01040b');
+    ctx.fillStyle=background;ctx.fillRect(0,0,baseW,baseH);
+    ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle='#176a8f';ctx.lineWidth=1;
+    for(let x=0;x<=baseW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,baseH);ctx.stroke();}
+    for(let y=0;y<=baseH;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(baseW,y);ctx.stroke();}
+    ctx.restore();
+
+    ctx.fillStyle='rgba(2,10,22,.94)';ctx.fillRect(36,22,1848,68);
+    ctx.strokeStyle='rgba(33,218,255,.58)';ctx.lineWidth=1;ctx.strokeRect(36.5,22.5,1847,67);
+    ctx.fillStyle='#e9faff';ctx.font='800 28px "Bahnschrift Condensed","Microsoft YaHei",sans-serif';ctx.textBaseline='middle';
+    ctx.fillText('像素领土战争 · 一局录像',58,53);
+    ctx.fillStyle='#54dff5';ctx.font='700 13px Consolas,monospace';ctx.fillText('FIREPOWER MATRIX  +  TERRITORY BATTLEFIELD',58,76);
+    const gameState=gameEnded
+      ?`终局 · ${FACTIONS[winnerFaction].name}获胜`
+      :monochromeFaction>=0
+        ?`${FACTIONS[monochromeFaction].name}单色锁定 ${monochromeHoldSeconds.toFixed(1)} / ${MONOCHROME_WIN_SECONDS.toFixed(0)} 秒`
+        :`运行 ${formatClock(simulationElapsed)} · ${speed.toFixed(2)}×`;
+    ctx.textAlign='right';ctx.fillStyle=gameEnded?FACTIONS[winnerFaction].color:'#a8c6d9';ctx.font='700 17px Consolas,"Microsoft YaHei",monospace';
+    ctx.fillText(`${gameState} · ${matchRecordingPreset.width} × ${matchRecordingPreset.height}`,1860,55);
+    ctx.textAlign='left';
+
+    const leftX=130,leftY=132,leftW=713,leftH=900,warX=889,warY=132,warSize=900;
+    const drawPanel=(x,y,w,h,label,index,color)=>{
+      ctx.fillStyle='rgba(2,8,18,.96)';ctx.fillRect(x-12,y-38,w+24,h+50);
+      ctx.strokeStyle='rgba(45,143,207,.62)';ctx.lineWidth=1;ctx.strokeRect(x-11.5,y-37.5,w+23,h+49);
+      ctx.fillStyle=color;ctx.fillRect(x-12,y-38,118,2);
+      ctx.fillStyle='#dff8ff';ctx.font='800 17px "Microsoft YaHei",sans-serif';ctx.fillText(label,x,y-17);
+      ctx.fillStyle='#6b9ab6';ctx.font='700 11px Consolas,monospace';ctx.textAlign='right';ctx.fillText(index,x+w,y-17);ctx.textAlign='left';
+    };
+    drawPanel(leftX,leftY,leftW,leftH,'火力生成矩阵','MATRIX / 01','#24e6ff');
+    drawPanel(warX,warY,warSize,warSize,'四方战场态势','TERRITORY / 1000²','#38f0a5');
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.drawImage(leftCanvas,leftX,leftY,leftW,leftH);
+    ctx.drawImage(warCanvas,warX,warY,warSize,warSize);
+    ctx.strokeStyle='rgba(57,218,255,.72)';ctx.strokeRect(leftX+.5,leftY+.5,leftW-1,leftH-1);
+    ctx.strokeStyle='rgba(53,219,174,.62)';ctx.strokeRect(warX+.5,warY+.5,warSize-1,warSize-1);
+
+    ctx.fillStyle='#6d9bb5';ctx.font='700 12px Consolas,"Microsoft YaHei",monospace';
+    ctx.fillText('胜利条件：同一阵营连续占领全部 1,000,000 格领土 10 秒',130,1054);
+    ctx.textAlign='right';ctx.fillText(`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · GPU ${territoryGpuActive?'ON':'FALLBACK'}`,1789,1054);ctx.textAlign='left';
+
+    if(gameEnded&&winnerFaction>=0){
+      ctx.fillStyle='rgba(1,5,12,.78)';ctx.fillRect(warX+110,warY+390,warSize-220,120);
+      ctx.strokeStyle=FACTIONS[winnerFaction].color;ctx.lineWidth=2;ctx.strokeRect(warX+110.5,warY+390.5,warSize-221,119);
+      ctx.fillStyle=FACTIONS[winnerFaction].color;ctx.textAlign='center';ctx.font='900 34px "Microsoft YaHei",sans-serif';ctx.fillText(`${FACTIONS[winnerFaction].name}占领全境`,warX+warSize/2,warY+435);
+      ctx.fillStyle='#eafaff';ctx.font='700 16px Consolas,"Microsoft YaHei",monospace';ctx.fillText(`MATCH COMPLETE · ${formatClock(simulationElapsed)}`,warX+warSize/2,warY+478);ctx.textAlign='left';
+    }
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+
+  function runMatchVideoCompositor(now){
+    if(!matchRecorder||matchRecorder.state==='inactive'||!matchRecordingPreset)return;
+    const frameStep=1000/matchRecordingPreset.fps;
+    if(!matchRecordingLastFrame||now-matchRecordingLastFrame>=frameStep){
+      matchRecordingLastFrame=now-(now-matchRecordingLastFrame)%frameStep;
+      drawMatchVideoFrame();
+    }
+    matchRecordingFrame=requestAnimationFrame(runMatchVideoCompositor);
+  }
+
+  async function finalizeMatchRecording(){
+    cancelAnimationFrame(matchRecordingFrame);matchRecordingFrame=0;
+    if(matchRecordingNaturalStopTimer){clearTimeout(matchRecordingNaturalStopTimer);matchRecordingNaturalStopTimer=0;}
+    if(matchRecordingStream){for(const track of matchRecordingStream.getTracks())track.stop();}
+    try{
+      await matchRecordingWriteChain;
+      if(matchRecordingWriteError)throw matchRecordingWriteError;
+      if(matchRecordingWriter)await matchRecordingWriter.close();
+      else if(matchRecordingChunks.length){
+        const blob=new Blob(matchRecordingChunks,{type:matchRecordingMime||'video/webm'});
+        const url=URL.createObjectURL(blob),link=document.createElement('a');
+        link.href=url;link.download=matchRecordingFileName;document.body.appendChild(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),30000);
+      }
+      matchRecordingStatusText=matchRecordingWriter?`已保存 · ${matchRecordingFinalReason}`:`已下载 · ${matchRecordingFinalReason}`;
+      log(`一局录像已导出：${matchRecordingFileName}（${matchRecordingFinalReason}）`);
+    }catch(error){
+      console.error('录像导出失败：',error);
+      matchRecordingStatusText='导出失败';
+      log(`录像导出失败：${error.message||error}`);
+      try{if(matchRecordingWriter)await matchRecordingWriter.abort();}catch{}
+    }finally{
+      matchRecorder=null;matchRecordingStream=null;matchRecordingWriter=null;matchRecordingPreset=null;
+      matchRecordingChunks=[];matchRecordingWriteChain=Promise.resolve();matchRecordingWriteError=null;matchRecordingPreparing=false;
+      updateMatchRecordingControls();
+    }
+  }
+
+  function stopMatchRecording(reason='手动结束'){
+    if(!matchRecorder||matchRecorder.state==='inactive')return;
+    matchRecordingFinalReason=reason;matchRecordingStatusText='正在封装…';updateMatchRecordingControls();
+    matchRecorder.stop();
+  }
+
+  async function startMatchRecording(){
+    if(matchRecorder||matchRecordingPreparing)return;
+    if(typeof MediaRecorder==='undefined'||typeof HTMLCanvasElement.prototype.captureStream!=='function'){
+      matchRecordingStatusText='浏览器不支持';updateMatchRecordingControls();
+      log('当前浏览器不支持 Canvas 视频录制，请使用最新版 Chrome、Edge 或 Safari。');
+      return;
+    }
+    const preset=VIDEO_PRESETS[UI.videoResolution?.value]||VIDEO_PRESETS['1080'];
+    const mimeType=pickMatchVideoMimeType();
+    if(!mimeType){
+      matchRecordingStatusText='编码器不可用';updateMatchRecordingControls();log('当前浏览器没有可用的视频编码器。');return;
+    }
+    matchRecordingPreparing=true;matchRecordingStatusText='选择保存位置…';updateMatchRecordingControls();
+    let writer=null;
+    try{
+      matchRecordingFileName=makeMatchVideoFileName(preset,mimeType);
+      if(typeof window.showSaveFilePicker==='function'){
+        const extension=mimeType.startsWith('video/mp4')?'.mp4':'.webm';
+        const handle=await window.showSaveFilePicker({
+          suggestedName:matchRecordingFileName,
+          types:[{description:'像素领土战争录像',accept:{[mimeType.split(';')[0]]:[extension]}}]
+        });
+        writer=await handle.createWritable();
+      }
+
+      resetGame();
+      matchVideoCanvas.width=preset.width;matchVideoCanvas.height=preset.height;
+      matchRecordingPreset=preset;matchRecordingMime=mimeType;matchRecordingWriter=writer;
+      matchRecordingChunks=[];matchRecordingWriteChain=Promise.resolve();matchRecordingWriteError=null;
+      matchRecordingFinalReason='手动结束';matchRecordingLastFrame=0;
+      drawMatchVideoFrame();
+      const stream=matchVideoCanvas.captureStream(preset.fps);
+      const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:preset.bitrate});
+      matchRecordingStream=stream;matchRecorder=recorder;
+      recorder.ondataavailable=event=>{
+        if(!event.data||!event.data.size)return;
+        if(matchRecordingWriter){
+          matchRecordingWriteChain=matchRecordingWriteChain
+            .then(()=>matchRecordingWriter.write(event.data))
+            .catch(error=>{
+              matchRecordingWriteError=error;
+              if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('写入错误');
+            });
+        }else matchRecordingChunks.push(event.data);
+      };
+      recorder.onerror=event=>{
+        matchRecordingWriteError=event.error||new Error('MediaRecorder 编码失败');
+        if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('编码错误');
+      };
+      recorder.onstop=finalizeMatchRecording;
+      recorder.start(1000);
+      matchRecordingStartWall=performance.now();matchRecordingPreparing=false;matchRecordingStatusText='录制中';
+      updateMatchRecordingControls();
+      matchRecordingFrame=requestAnimationFrame(runMatchVideoCompositor);
+      log(`已重置并开始录制一局：${preset.width} × ${preset.height} · ${preset.fps} FPS · ${mimeType}`);
+    }catch(error){
+      matchRecordingPreparing=false;
+      if(error?.name==='AbortError'){
+        matchRecordingStatusText='已取消';updateMatchRecordingControls();return;
+      }
+      console.error('录像启动失败：',error);
+      matchRecordingStatusText='启动失败';updateMatchRecordingControls();log(`录像启动失败：${error.message||error}`);
+      try{if(writer)await writer.abort();}catch{}
+    }
+  }
+
+  window.__matchCaptureInfo=()=>({
+    recording:!!matchRecorder&&matchRecorder.state!=='inactive',
+    preparing:matchRecordingPreparing,
+    resolution:matchRecordingPreset?`${matchRecordingPreset.width}x${matchRecordingPreset.height}`:UI.videoResolution?.value,
+    mimeType:matchRecordingMime,
+    status:matchRecordingStatusText
+  });
+
   function formatChartTime(seconds){
     const safe=Math.max(0,Number.isFinite(seconds)?seconds:0);
     if(safe<10)return safe.toFixed(1)+'s';
@@ -3250,11 +3493,13 @@
     UI.factionButtons.forEach(btn=>btn.classList.toggle('eliminated',eliminated[Number(btn.dataset.faction)]));
     const timer=UI.roundText;
     if(timer){
-      if(autoPauseTriggered)timer.textContent=paused&&simulationElapsed<=AUTO_PAUSE_SECONDS+.001?'已于 06:00 暂停':`运行 ${formatClock(simulationElapsed)} · 无上限`;
-      else timer.textContent=`运行 ${formatClock(simulationElapsed)} / 06:00`;
+      if(gameEnded&&winnerFaction>=0)timer.textContent=`终局 ${formatClock(simulationElapsed)} · ${FACTIONS[winnerFaction].name}获胜`;
+      else if(monochromeFaction>=0)timer.textContent=`${FACTIONS[monochromeFaction].name}单色锁定 ${monochromeHoldSeconds.toFixed(1)} / ${MONOCHROME_WIN_SECONDS.toFixed(0)}秒`;
+      else timer.textContent=`运行 ${formatClock(simulationElapsed)} · 无上限`;
     }
     const perf=UI.perfText;if(perf)perf.textContent=`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · FX ${pulses.length} · 球桶 ${activeBallBuckets.length}`;
     if(UI.mechanicsText)UI.mechanicsText.textContent=`倍率 ×2 / ×4 / ×8 · ${FACTIONS[selectedFaction].name}保底 ${multiplierDryStreak[selectedFaction]}/${TUNING.plinko.pityDrySettles}${multiplierPityCharges[selectedFaction]?'（已就绪）':''}`;
+    updateMatchRecordingControls();
     updateTopHitDisplays();
     syncPowerHistory();
     updateStocks();
@@ -4021,21 +4266,45 @@
     }
     wctx.globalAlpha=1;wctx.globalCompositeOperation='source-over';
   }
+  function completeMonochromeVictory(faction){
+    if(gameEnded)return;
+    gameEnded=true;winnerFaction=faction;monochromeFaction=faction;monochromeHoldSeconds=MONOCHROME_WIN_SECONDS;paused=true;simAccumulator=0;
+    if(UI.pauseBtn){UI.pauseBtn.textContent='已结束';UI.pauseBtn.disabled=true;}
+    log(`${FACTIONS[faction].name}已连续 ${MONOCHROME_WIN_SECONDS} 秒占领全部领土，本局结束。`,faction);
+    updateStats();
+    if(matchRecorder&&matchRecorder.state!=='inactive'){
+      matchRecordingStatusText='终局画面…';updateMatchRecordingControls();
+      if(matchRecordingNaturalStopTimer)clearTimeout(matchRecordingNaturalStopTimer);
+      matchRecordingNaturalStopTimer=setTimeout(()=>stopMatchRecording(`${FACTIONS[faction].name}获胜`),900);
+    }
+  }
+
+  function updateMonochromeVictory(dt){
+    if(gameEnded)return;
+    let fullFaction=-1;
+    for(let faction=0;faction<FACTIONS.length;faction++){
+      if(territoryCounts[faction]===owner.length){fullFaction=faction;break;}
+    }
+    if(fullFaction<0){
+      monochromeFaction=-1;monochromeHoldSeconds=0;return;
+    }
+    if(monochromeFaction!==fullFaction){
+      monochromeFaction=fullFaction;monochromeHoldSeconds=0;
+      log(`${FACTIONS[fullFaction].name}已占领全部领土，连续保持 ${MONOCHROME_WIN_SECONDS} 秒即可获胜。`,fullFaction);
+    }
+    monochromeHoldSeconds=Math.min(MONOCHROME_WIN_SECONDS,monochromeHoldSeconds+dt);
+    if(monochromeHoldSeconds>=MONOCHROME_WIN_SECONDS-1e-9)completeMonochromeVictory(fullFaction);
+  }
+
   let lastLeftDraw=0,renderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
   function simulateStep(dt){
     territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
     simulationElapsed+=dt;
     updateConverterLayout(simulationElapsed);
-    updateBalls(dt);updateWar(dt);
+    updateBalls(dt);updateWar(dt);updateMonochromeVictory(dt);
     hudTextCarry+=dt;
     if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;updateBaseTextCaches();}
-    if(!autoPauseTriggered&&simulationElapsed>=AUTO_PAUSE_SECONDS){
-      simulationElapsed=AUTO_PAUSE_SECONDS;autoPauseTriggered=true;paused=true;
-      if(UI.pauseBtn)UI.pauseBtn.textContent='继续';
-      log('模拟已运行 6 分钟并自动暂停；时间上限已取消，点击“继续”后可无限运行。');
-      updateStats();
-    }
   }
   function frame(now){
     const elapsed=Math.min(.1,(now-last)/1000);last=now;
@@ -4058,6 +4327,29 @@
     if(!bootFrameCompleted){bootFrameCompleted=true;if(bootNotice)bootNotice.classList.add('hidden');}
     requestAnimationFrame(frame);
   }
+
+  function resetGame(){
+    while(projectiles.length){const p=projectiles.pop();p.orbShieldContacts=0;projectilePool.push(p);}
+    balls.length=beams.length=pulses.length=fireQueue.length=0;
+    for(let i=0;i<4;i++){
+      STOCK_KEYS.forEach(key=>stocks[i][key]=0);
+      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;
+      shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;
+      powerHistory[i].length=0;powerHistory[i].push({t:0,v:1});
+    }
+    lastPowerHistoryTime=0;
+    previousOrbPairContacts.clear();currentOrbPairContacts.clear();
+    resetTopHitCounts();
+    buildPegRotors();resetTerritory();initializeFixedBallPool();
+    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;
+    gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
+    if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
+    if(UI.feed)UI.feed.innerHTML='';
+    updateBaseTextCaches();
+    log(`战场已重置：运行时间不设上限；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒后结束本局。`);
+    updateStocks();updateStats();
+  }
+
   UI.factionButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.factionButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedFaction=Number(btn.dataset.faction);updateStocks();updateStats();}));
   UI.weaponButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.weaponButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedWeapon=btn.dataset.weapon;}));
   if(UI.launchBtn)UI.launchBtn.addEventListener('click',relaunchSelectedFaction);
@@ -4069,24 +4361,20 @@
   if(speedRange)speedRange.addEventListener('input',updateSpeedControl);
   updateSpeedControl();
   if(UI.profileBadge)UI.profileBadge.textContent=PERF_PROFILE.name;
-  if(UI.pauseBtn)UI.pauseBtn.addEventListener('click',e=>{paused=!paused;e.target.textContent=paused?'继续':'暂停';updateStats();});
+  if(UI.pauseBtn)UI.pauseBtn.addEventListener('click',e=>{if(gameEnded)return;paused=!paused;e.target.textContent=paused?'继续':'暂停';updateStats();});
+  if(UI.recordGameBtn)UI.recordGameBtn.addEventListener('click',startMatchRecording);
+  if(UI.stopRecordBtn)UI.stopRecordBtn.addEventListener('click',()=>stopMatchRecording('手动结束'));
   document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;});
   if(UI.resetBtn)UI.resetBtn.addEventListener('click',()=>{
-    while(projectiles.length){const p=projectiles.pop();p.orbShieldContacts=0;projectilePool.push(p);}balls.length=beams.length=pulses.length=fireQueue.length=0;
-    for(let i=0;i<4;i++){STOCK_KEYS.forEach(k=>stocks[i][k]=0);shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;}
-    previousOrbPairContacts.clear();currentOrbPairContacts.clear();
-    resetTopHitCounts();
-    buildPegRotors();resetTerritory();initializeFixedBallPool();simulationElapsed=0;updateConverterLayout(0);autoPauseTriggered=false;paused=false;simAccumulator=0;
-    if(UI.pauseBtn)UI.pauseBtn.textContent='暂停';if(UI.feed)UI.feed.innerHTML='';
-    updateBaseTextCaches();
-    log('战场已重置：四方恢复存活，基础护盾恢复为 10M；实心护盾覆盖区保护基地核心，最中心白色圆点被敌方弹丸命中即淘汰；火力生成不设玩法上限。');
-    updateStocks();updateStats();
+    if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
+    resetGame();
   });
   resetTopHitCounts();
   initTerritoryGpu();resetTerritory();initializeFixedBallPool();updateBaseTextCaches();updateTerritoryRendererBadge();
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
+  log(`Demo v141 已启动：取消 6 分钟自动暂停；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒即结束；支持 1080P60 / 4K30 的 16:9 一局录像与流式导出。`);
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
