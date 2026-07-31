@@ -1105,7 +1105,7 @@
   const MULT_SEPARATOR_HALF_WIDTH=8;
   const CONVERTER_ORDER=Object.freeze(['scatter','machine','shield','orb','sniper']);
   const CONVERTER_MIN_WIDTH=.01;
-  const CONVERTER_HIGHLIGHT_FADE=1.75;
+  const CONVERTER_HIGHLIGHT_FADE=1.15;
 
   // v93：弹珠数值从 2¹ 到 2²⁰ 时，半径从 6 线性增加到 25；之后封顶。
   const BALL_RADIUS_BASE=6;
@@ -4209,11 +4209,11 @@
       lctx.beginPath();lctx.rect(cell.x,BOARD.convertTop,cell.w,BOARD.convertBottom-BOARD.convertTop);lctx.clip();
       lctx.globalCompositeOperation='lighter';
       const glow=lctx.createLinearGradient(cell.x,BOARD.convertTop,cell.x,cell.bottom);
-      glow.addColorStop(0,colorWithAlpha(color,.34*strength));
-      glow.addColorStop(.42,colorWithAlpha(color,.18*strength));
-      glow.addColorStop(1,colorWithAlpha(color,.07*strength));
+      glow.addColorStop(0,colorWithAlpha(color,.48*strength));
+      glow.addColorStop(.42,colorWithAlpha(color,.27*strength));
+      glow.addColorStop(1,colorWithAlpha(color,.12*strength));
       lctx.fillStyle=glow;lctx.fillRect(cell.left,BOARD.convertTop,Math.max(0,cell.right-cell.left),cell.bottom-BOARD.convertTop);
-      lctx.globalAlpha=.72*strength;lctx.strokeStyle=color;lctx.lineWidth=1.8+1.1*strength;lctx.shadowColor=color;lctx.shadowBlur=12*strength;
+      lctx.globalAlpha=.95*strength;lctx.strokeStyle=color;lctx.lineWidth=2.1+1.4*strength;lctx.shadowColor=color;lctx.shadowBlur=16*strength;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.convertTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.convertTop);lctx.stroke();
       lctx.restore();
     }
@@ -4371,23 +4371,21 @@
 
     for(const cell of converterCells){
       if(cell.w<=CONVERTER_MIN_WIDTH)continue;
-      // 端口默认使用对应武器的基础色；阵营高亮由 drawConverterHighlights 在运行层叠加。
-      const col=WEAPON_COLORS[cell.key];
       lctx.save();
       lctx.beginPath();lctx.rect(cell.x,BOARD.convertTop,cell.w,BOARD.convertBottom-BOARD.convertTop);lctx.clip();
       const gradient=lctx.createLinearGradient(cell.x,BOARD.convertTop,cell.x,cell.bottom);
-      gradient.addColorStop(0,colorWithAlpha(col,.16));gradient.addColorStop(1,colorWithAlpha(col,.055));
+      gradient.addColorStop(0,'rgba(34,40,46,.36)');gradient.addColorStop(1,'rgba(7,11,16,.78)');
       const innerWidth=Math.max(0,cell.right-cell.left);
       lctx.fillStyle=gradient;lctx.fillRect(cell.left,BOARD.convertTop,innerWidth,cell.bottom-BOARD.convertTop);
-      lctx.strokeStyle=colorWithAlpha(col,.58);lctx.lineWidth=1.2;lctx.shadowColor=col;lctx.shadowBlur=4;
+      lctx.strokeStyle='rgba(142,153,161,.48)';lctx.lineWidth=1.1;lctx.shadowColor='rgba(196,211,218,.36)';lctx.shadowBlur=3;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.convertTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.convertTop);lctx.stroke();
       const headerWidth=Math.max(0,innerWidth-6);
-      lctx.globalAlpha=.22;lctx.fillStyle=col;lctx.fillRect(cell.left+3,BOARD.convertTop+3,headerWidth,34);
-      lctx.globalAlpha=.58;lctx.fillRect(cell.left+3,BOARD.convertTop+37,headerWidth,1);
+      lctx.globalAlpha=.17;lctx.fillStyle='rgba(178,190,197,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+3,headerWidth,34);
+      lctx.globalAlpha=.48;lctx.fillStyle='rgba(207,219,225,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+37,headerWidth,1);
       const centerX=cell.x+cell.w/2;
       lctx.globalAlpha=1;
-      if(cell.w>=48)drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,centerX,BOARD.convertTop+24,{fillStyle:colorWithAlpha(col,.92),font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:col,shadowBlur:3});
-      else if(cell.w>=16)drawText(lctx,WEAPONS[cell.key].icon,centerX,BOARD.convertTop+24,{fillStyle:colorWithAlpha(col,.92),font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:col,shadowBlur:3});
+      if(cell.w>=48)drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,centerX,BOARD.convertTop+24,{fillStyle:'rgba(220,229,233,.88)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(200,216,224,.58)',shadowBlur:3});
+      else if(cell.w>=16)drawText(lctx,WEAPONS[cell.key].icon,centerX,BOARD.convertTop+24,{fillStyle:'rgba(220,229,233,.88)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(200,216,224,.58)',shadowBlur:3});
       if(cell.w>=44)drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,centerX,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
       lctx.restore();
     }
@@ -5016,6 +5014,7 @@
   log('Demo v169 已启动：阵营淘汰后保留已发射弹丸；未结算机枪与生成区弹珠转为随机方向大球。');
   log('Demo v170 已启动：累计火力数据条改为单栏展示，界面信息密度进一步收敛。');
   log('Demo v171 已启动：火力兑现区默认显示武器基础色，弹珠结算后短暂叠加对应阵营高亮。');
+  log('Demo v172 已启动：火力兑现区默认改为中性无色，高亮饱和度增强并延长衰减时间。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
