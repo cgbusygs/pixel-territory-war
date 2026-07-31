@@ -4530,10 +4530,11 @@
     wctx.restore();
   }
 
-  function drawSniperReticle(x,y,color,scale,rotation,locked,alpha,pulse){
+  function drawSniperReticle(x,y,color,scale,locked,alpha,pulse){
     const light=locked?'#ffffff':mixHexColors(color,'#ffffff',.78);
     const inner=scale*.34,ring=scale*.78,outer=scale*1.18,arm=scale*.16;
-    wctx.save();wctx.translate(x,y);wctx.rotate(rotation);wctx.globalAlpha=alpha;wctx.lineCap='square';wctx.lineJoin='miter';
+    // 准星保持屏幕坐标的静态朝向；锁定动效只通过透明度/脉冲表达，避免旋转干扰目标识别。
+    wctx.save();wctx.translate(x,y);wctx.globalAlpha=alpha;wctx.lineCap='square';wctx.lineJoin='miter';
     // 参考准星的四段内环：每个象限留出明显断口。
     wctx.strokeStyle=color;wctx.lineWidth=locked?1.5:1.0;wctx.beginPath();
     for(let i=0;i<4;i++){
@@ -4570,7 +4571,8 @@
         const bx=FACTIONS[candidate].base[0]*WV.w,by=FACTIONS[candidate].base[1]*WV.h;
         const isCurrent=candidate===targetFaction,candidateAlpha=isCurrent?(locked?.88:.58):.14;
         const candidateScale=isCurrent?BASE_OUTER_RADIUS+18+pulse*5:BASE_OUTER_RADIUS*.78;
-        drawSniperReticle(bx,by,FACTIONS[candidate].color,candidateScale,now*(isCurrent?(locked?.12:.42):.08),isCurrent&&locked,candidateAlpha,pulse);
+        // 锁定效果统一使用发射阵营色，避免候选目标颜色让准星归属产生歧义。
+        drawSniperReticle(bx,by,source.color,candidateScale,isCurrent&&locked,candidateAlpha,pulse);
       }
       wctx.globalAlpha=locked?.28:.15;wctx.strokeStyle=source.color;wctx.lineWidth=locked?1.7:1;
       wctx.setLineDash(locked?[]:[5,10]);wctx.beginPath();wctx.moveTo(sx,sy);wctx.lineTo(tx,ty);wctx.stroke();wctx.setLineDash([]);
@@ -4964,6 +4966,7 @@
   log('Demo v162 已启动：狙击尾迹改为按独立轨迹段年龄分层衰减，最长可见约 10 秒，避免连续叠加造成永久残留观感。');
   log('Demo v163 已启动：狙击随机扫描延长至 10–12 秒，目标切换间隔由 0.15 秒渐进到 0.8 秒，并替换为四向准星瞄准器动画。');
   log('Demo v164 已启动：火力兑现区两侧端口的线性扩展时间由 20 分钟延长至 30 分钟，之后固定为 1:1:1:1:1。');
+  log('Demo v165 已启动：狙击锁定准星统一采用发射阵营色，并固定朝向不再旋转。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
