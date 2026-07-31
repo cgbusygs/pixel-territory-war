@@ -4552,15 +4552,16 @@
       wctx.lineWidth=(locked?2.2:1.45)*SNIPER_LOCK_STROKE_SCALE;wctx.beginPath();wctx.moveTo(tx-px*arm,ty-py*arm);wctx.lineTo(tx+px*arm,ty+py*arm);wctx.stroke();
     }
     wctx.strokeStyle=color;wctx.lineWidth=(locked?1.4:.9)*SNIPER_LOCK_STROKE_SCALE;wctx.beginPath();wctx.arc(0,0,inner,0,TAU);wctx.stroke();
-    wctx.globalAlpha=alpha*(.26+.24*pulse);wctx.strokeStyle=light;wctx.lineWidth=(locked?3.2:2.2)*SNIPER_LOCK_STROKE_SCALE;wctx.beginPath();wctx.arc(0,0,outer*1.08,0,TAU);wctx.stroke();
-    wctx.globalAlpha=alpha*(locked?.96:.78);wctx.fillStyle=light;wctx.beginPath();wctx.arc(0,0,Math.max(2.2,scale*.07),0,TAU);wctx.fill();
+    wctx.globalAlpha=locked?1:alpha*(.26+.24*pulse);wctx.strokeStyle=light;wctx.lineWidth=(locked?3.2:2.2)*SNIPER_LOCK_STROKE_SCALE;wctx.beginPath();wctx.arc(0,0,outer*1.08,0,TAU);wctx.stroke();
+    wctx.globalAlpha=locked?1:alpha*.78;wctx.fillStyle=light;wctx.beginPath();wctx.arc(0,0,Math.max(2.2,scale*.07),0,TAU);wctx.fill();
     wctx.restore();
   }
 
   function drawSniperTargeting(){
     if(sniperAimJobs.length===0)return;
     const now=performance.now()/1000;
-    wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';wctx.lineJoin='round';wctx.textAlign='center';wctx.textBaseline='middle';
+    // 该函数在战场所有元素绘制完成后调用，使用 source-over 让锁定层真正覆盖在画布顶层。
+    wctx.save();wctx.globalCompositeOperation='source-over';wctx.lineCap='round';wctx.lineJoin='round';wctx.textAlign='center';wctx.textBaseline='middle';
     for(const job of sniperAimJobs){
       const targetFaction=job.phase==='locked'?job.selectedTargetFaction:job.currentTargetFaction;
       if(targetFaction<0||eliminated[targetFaction])continue;
@@ -4570,18 +4571,18 @@
       const candidates=getSniperTargetCandidates(job.faction);
       for(const candidate of candidates){
         const bx=FACTIONS[candidate].base[0]*WV.w,by=FACTIONS[candidate].base[1]*WV.h;
-        const isCurrent=candidate===targetFaction,candidateAlpha=isCurrent?(locked?.88:.58):.14;
+        const isCurrent=candidate===targetFaction,candidateAlpha=isCurrent?(locked?1:.58):.14;
         const candidateScale=isCurrent?BASE_OUTER_RADIUS+18+pulse*5:BASE_OUTER_RADIUS*.78;
         // 锁定效果统一使用发射阵营色，避免候选目标颜色让准星归属产生歧义。
         drawSniperReticle(bx,by,source.color,candidateScale,isCurrent&&locked,candidateAlpha,pulse);
       }
-      wctx.globalAlpha=locked?.28:.15;wctx.strokeStyle=source.color;wctx.lineWidth=(locked?1.7:1)*SNIPER_LOCK_STROKE_SCALE;
+      wctx.globalAlpha=locked?1:.15;wctx.strokeStyle=source.color;wctx.lineWidth=(locked?1.7:1)*SNIPER_LOCK_STROKE_SCALE;
       wctx.setLineDash(locked?[]:[5,10]);wctx.beginPath();wctx.moveTo(sx,sy);wctx.lineTo(tx,ty);wctx.stroke();wctx.setLineDash([]);
       const ring=BASE_OUTER_RADIUS+32+pulse*5;
       const remaining=locked?Math.max(0,SNIPER_LOCK_DELAY_SECONDS-job.lockElapsed):Math.max(0,job.duration-job.elapsed);
-      wctx.globalAlpha=.88;wctx.fillStyle=locked?'#ffffff':source.color;wctx.font='700 10px monospace';
+      wctx.globalAlpha=locked?1:.88;wctx.fillStyle=locked?'#ffffff':source.color;wctx.font='700 10px monospace';
       wctx.fillText(locked?`LOCKED ${remaining.toFixed(1)}s`:`SCAN ${remaining.toFixed(1)}s`,tx,ty-ring-10);
-      wctx.globalAlpha=.52;wctx.fillStyle=target.color;wctx.font='700 9px monospace';
+      wctx.globalAlpha=locked?1:.52;wctx.fillStyle=target.color;wctx.font='700 9px monospace';
       wctx.fillText(`${source.name} → ${target.name}`,tx,ty+ring+11);
     }
     wctx.restore();
@@ -4969,6 +4970,7 @@
   log('Demo v164 已启动：火力兑现区两侧端口的线性扩展时间由 20 分钟延长至 30 分钟，之后固定为 1:1:1:1:1。');
   log('Demo v165 已启动：狙击锁定准星统一采用发射阵营色，并固定朝向不再旋转。');
   log('Demo v166 已启动：狙击锁定效果的准星与连线线宽统一调整为原来的 140%。');
+  log('Demo v167 已启动：狙击锁定层改为不透明 source-over 合成，并在战场全部元素之后置顶绘制。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
