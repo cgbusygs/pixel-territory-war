@@ -1272,6 +1272,20 @@
     ctx.beginPath();ctx.moveTo(PLAYFIELD.left,BOARD.spawnY);ctx.lineTo(PLAYFIELD.right,BOARD.spawnY);ctx.stroke();ctx.restore();
     drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.upperTop-10,PLAYFIELD.width,BOARD.upperBottom-BOARD.upperTop+26,'#318cf6');
     drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.lowerTop-10,PLAYFIELD.width,BOARD.lowerBottom-BOARD.lowerTop+24,'#625bff');
+    // 下层单向挡板：允许弹珠从上方落入，但阻止已经进入下层的弹珠向上穿越。
+    ctx.save();
+    const returnBarrierY=BOARD.lowerTop;
+    const barrierGrad=ctx.createLinearGradient(PLAYFIELD.left,returnBarrierY,PLAYFIELD.right,returnBarrierY);
+    barrierGrad.addColorStop(0,'rgba(95,120,255,.92)');
+    barrierGrad.addColorStop(.5,'rgba(211,104,255,.98)');
+    barrierGrad.addColorStop(1,'rgba(95,120,255,.92)');
+    ctx.strokeStyle=barrierGrad;ctx.lineWidth=2.2;ctx.shadowColor='#b56cff';ctx.shadowBlur=9;
+    ctx.beginPath();ctx.moveTo(PLAYFIELD.left,returnBarrierY);ctx.lineTo(PLAYFIELD.right,returnBarrierY);ctx.stroke();
+    ctx.shadowBlur=0;ctx.strokeStyle='rgba(224,189,255,.72)';ctx.lineWidth=1;
+    for(let x=PLAYFIELD.left+10;x<PLAYFIELD.right-4;x+=30){
+      ctx.beginPath();ctx.moveTo(x,returnBarrierY-5);ctx.lineTo(x+5,returnBarrierY+3);ctx.lineTo(x+10,returnBarrierY-5);ctx.stroke();
+    }
+    ctx.restore();
     ctx.save();
     const wallTop=MATRIX_TOP_WALL_Y,wallBottom=MATRIX_BOTTOM_WALL_Y;
     const wallGrad=ctx.createLinearGradient(0,wallTop,0,wallBottom);
@@ -2004,12 +2018,22 @@
   function passBallToLowerRegion(ball){
     ball.zone='lower';
     ball.multRegion=null;
-    ball.y=BOARD.lowerTop+2;
+    // 进入下层后放到挡板下方，确保不会在同一帧被挡板重新顶回去。
+    ball.y=BOARD.lowerTop+ball.r+2;
     ball.vy=Math.max(95,ball.vy*.68);
   }
 
+  function resolveLowerReturnBarrier(ball){
+    // 单向挡板只约束已经处于 lower 状态的弹珠；向下穿越时不干预。
+    const barrierTop=BOARD.lowerTop+ball.r;
+    if(ball.y<barrierTop){
+      ball.y=barrierTop;
+      if(ball.vy<0)ball.vy=Math.abs(ball.vy)*.12;
+    }
+  }
+
   function updateMultiplierRegion(ball){
-    // 顶部没有墙，弹珠被撞回上方时重新进入上层分流区。
+    // 顶部没有墙，尚未落入下层的弹珠被撞回上方时重新进入上层分流区。
     if(ball.y+ball.r<BOARD.multTop&&ball.vy<0){
       ball.zone='upper';
       ball.multRegion=null;
@@ -2136,6 +2160,7 @@
         for(const p of upperPegs)collidePeg(b,p);
       }else if(b.zone==='lower'){
         for(const p of lowerPegs)collidePeg(b,p);
+        resolveLowerReturnBarrier(b);
       }
       resolveMultiplierWallCapCollisions(b);
     }
@@ -2151,6 +2176,7 @@
         for(const p of upperPegs)collidePeg(b,p);
       }else if(b.zone==='lower'){
         for(const p of lowerPegs)collidePeg(b,p);
+        resolveLowerReturnBarrier(b);
       }else if(b.zone==='multiplier'){
         resolveMultiplierBoundaryCollisions(b);
       }else if(b.zone==='convert'){
@@ -4619,6 +4645,7 @@
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
   log('Demo v147 已启动：火力生成矩阵运动速度调整为当前 80%，战场模拟与页面渲染帧率保持不变。');
+  log('Demo v148 已启动：下层入口增加单向挡板；弹珠落入下层后不能再返回上层。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
