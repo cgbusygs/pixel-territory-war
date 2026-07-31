@@ -717,7 +717,18 @@
   const eliminationFlash=[0,0,0,0];
   const multiplierDryStreak=new Uint8Array(4);
   const multiplierPityCharges=new Uint8Array(4);
-  const SETTLED_SIZE_BUCKET_LABELS=Object.freeze(['12–20px','20–30px','30–40px','40px以上']);
+  // 已兑现弹珠按 2px 直径步长统计；区间左闭右开，50px及以上归入末档。
+  const SETTLED_SIZE_BUCKET_MIN=12;
+  const SETTLED_SIZE_BUCKET_STEP=2;
+  const SETTLED_SIZE_BUCKET_MAX=50;
+  const SETTLED_SIZE_BUCKET_INTERVAL_COUNT=Math.ceil((SETTLED_SIZE_BUCKET_MAX-SETTLED_SIZE_BUCKET_MIN)/SETTLED_SIZE_BUCKET_STEP);
+  const SETTLED_SIZE_BUCKET_LABELS=Object.freeze([
+    ...Array.from({length:SETTLED_SIZE_BUCKET_INTERVAL_COUNT},(_,index)=>{
+      const start=SETTLED_SIZE_BUCKET_MIN+index*SETTLED_SIZE_BUCKET_STEP;
+      return `${start}–${start+SETTLED_SIZE_BUCKET_STEP}px`;
+    }),
+    `${SETTLED_SIZE_BUCKET_MAX}px以上`
+  ]);
   const settledBallSizeBucketCounts=new Uint32Array(SETTLED_SIZE_BUCKET_LABELS.length);
   // 护盾物理中心保持固定；以下偏移只用于表现大球撞击后的短暂视觉回弹。
   const shieldRecoilX=[0,0,0,0],shieldRecoilY=[0,0,0,0];
@@ -3672,7 +3683,8 @@
   function recordSettledBallSize(ball){
     const diameter=Number.isFinite(ball.r)?Math.max(0,ball.r*2):0;
     if(diameter<=0)return;
-    const bucketIndex=diameter<20?0:diameter<30?1:diameter<40?2:3;
+    const bucketIndex=Math.max(0,Math.min(SETTLED_SIZE_BUCKET_INTERVAL_COUNT,
+      Math.floor((diameter-SETTLED_SIZE_BUCKET_MIN)/SETTLED_SIZE_BUCKET_STEP)));
     settledBallSizeBucketCounts[bucketIndex]++;
   }
 
@@ -4724,6 +4736,7 @@
   log('Demo v155 已启动：顶部新增已兑现小球直径统计。');
   log('Demo v156 已启动：已兑现小球改为按 12–20、20–30、30–40、40px以上区间统计数量。');
   log('Demo v157 已启动：残余火力不足一格时仍可完成最后一格占领；每淘汰一个阵营，后续弹珠起始数值乘 8。');
+  log('Demo v158 已启动：已兑现小球直径统计改为每 2px 一个区间，50px及以上归入末档。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
