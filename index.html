@@ -1086,9 +1086,9 @@
   const MULT_OUTER_WALL_CAP_HALF_WIDTH=MULT_SEPARATOR_HALF_WIDTH*.5;
 
   const PEG_DISC_POINT_RADIUS=4.1;
-  // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值。
+  // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值；当前转速为原设定的 80%。
   const PEG_DISC_ORBIT_RADIUS=123.552;
-  const PEG_DISC_SPIN_SPEED=3.15;
+  const PEG_DISC_SPIN_SPEED=2.52;
   const MATRIX_SIMULATION_SPEED_SCALE=.8;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
@@ -4655,6 +4655,7 @@
   log('Demo v150 已启动：弹珠向下穿过中央挡板时保留原始位置与动量，仅拦截下层向上的回穿。');
   log('Demo v151 已启动：升力端点调整为半径 6px 对应 15000、半径 25px 对应 110。');
   log('Demo v152 已启动：弹珠互撞与转盘碰撞点的单次动能损失调整为 10%，速度保留系数为 √0.90。');
+  log('Demo v153 已启动：四个转盘统一转速调整为原设定的 80%，当前角速度为 2.52。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
