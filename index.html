@@ -1272,20 +1272,6 @@
     ctx.beginPath();ctx.moveTo(PLAYFIELD.left,BOARD.spawnY);ctx.lineTo(PLAYFIELD.right,BOARD.spawnY);ctx.stroke();ctx.restore();
     drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.upperTop-10,PLAYFIELD.width,BOARD.upperBottom-BOARD.upperTop+26,'#318cf6');
     drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.lowerTop-10,PLAYFIELD.width,BOARD.lowerBottom-BOARD.lowerTop+24,'#625bff');
-    // 下层单向挡板：允许弹珠从上方落入，但阻止已经进入下层的弹珠向上穿越。
-    ctx.save();
-    const returnBarrierY=BOARD.lowerTop;
-    const barrierGrad=ctx.createLinearGradient(PLAYFIELD.left,returnBarrierY,PLAYFIELD.right,returnBarrierY);
-    barrierGrad.addColorStop(0,'rgba(95,120,255,.92)');
-    barrierGrad.addColorStop(.5,'rgba(211,104,255,.98)');
-    barrierGrad.addColorStop(1,'rgba(95,120,255,.92)');
-    ctx.strokeStyle=barrierGrad;ctx.lineWidth=2.2;ctx.shadowColor='#b56cff';ctx.shadowBlur=9;
-    ctx.beginPath();ctx.moveTo(PLAYFIELD.left,returnBarrierY);ctx.lineTo(PLAYFIELD.right,returnBarrierY);ctx.stroke();
-    ctx.shadowBlur=0;ctx.strokeStyle='rgba(224,189,255,.72)';ctx.lineWidth=1;
-    for(let x=PLAYFIELD.left+10;x<PLAYFIELD.right-4;x+=30){
-      ctx.beginPath();ctx.moveTo(x,returnBarrierY-5);ctx.lineTo(x+5,returnBarrierY+3);ctx.lineTo(x+10,returnBarrierY-5);ctx.stroke();
-    }
-    ctx.restore();
     ctx.save();
     const wallTop=MATRIX_TOP_WALL_Y,wallBottom=MATRIX_BOTTOM_WALL_Y;
     const wallGrad=ctx.createLinearGradient(0,wallTop,0,wallBottom);
@@ -2025,7 +2011,7 @@
 
   function resolveLowerReturnBarrier(ball){
     // 单向挡板只约束已经处于 lower 状态的弹珠；向下穿越时不干预。
-    const barrierTop=BOARD.lowerTop+ball.r;
+    const barrierTop=BOARD.multBottom+ball.r;
     if(ball.y<barrierTop){
       ball.y=barrierTop;
       if(ball.vy<0)ball.vy=Math.abs(ball.vy)*.12;
@@ -4053,7 +4039,7 @@
       drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-11,{fillStyle:'rgba(242,251,255,.94)',font:'800 12px monospace',align:'center',shadowColor:col,shadowBlur:4});
     }
 
-    // v93：参考图式乘区墙。内部墙为双斜面尖顶，左右外墙为单斜切顶；不再使用独立挡板。
+    // v93：参考图式乘区墙。内部墙为双斜面尖顶，左右外墙为单斜切顶。
     lctx.save();
     lctx.shadowColor='rgba(120,220,255,.44)';
     lctx.shadowBlur=6;
@@ -4100,6 +4086,19 @@
       [PLAYFIELD.right+outerHalf,BOARD.multBottom],
       [PLAYFIELD.right-outerHalf,BOARD.multBottom]
     ],PLAYFIELD.right,outerHalf);
+    lctx.restore();
+
+    // 下层单向挡板位于乘区底边，复用乘区隔板的金属渐变与冷白描边。
+    lctx.save();
+    const returnBarrierY=BOARD.multBottom,barrierHalf=4.5;
+    const barrierGrad=lctx.createLinearGradient(0,returnBarrierY-barrierHalf,0,returnBarrierY+barrierHalf);
+    barrierGrad.addColorStop(0,'rgba(79,151,185,.62)');
+    barrierGrad.addColorStop(.5,'rgba(224,248,255,.90)');
+    barrierGrad.addColorStop(1,'rgba(79,151,185,.62)');
+    lctx.fillStyle=barrierGrad;lctx.strokeStyle='rgba(227,250,255,.94)';lctx.lineWidth=1;lctx.shadowColor='rgba(120,220,255,.44)';lctx.shadowBlur=6;
+    lctx.beginPath();
+    lctx.rect(PLAYFIELD.left,returnBarrierY-barrierHalf,PLAYFIELD.width,barrierHalf*2);
+    lctx.fill();lctx.stroke();
     lctx.restore();
 
     for(const cell of converterCells){
@@ -4645,7 +4644,7 @@
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
   log('Demo v147 已启动：火力生成矩阵运动速度调整为当前 80%，战场模拟与页面渲染帧率保持不变。');
-  log('Demo v148 已启动：下层入口增加单向挡板；弹珠落入下层后不能再返回上层。');
+  log('Demo v148 已启动：乘区底边增加单向挡板；弹珠落入下层后不能再返回上层。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
