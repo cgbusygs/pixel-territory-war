@@ -593,12 +593,9 @@
       jitterRateB:2.15             // 次方向噪声频率
     }),
     gapField:Object.freeze({
-      liftFloor:120,               // 极高数值弹珠仍保留的最小向上加速度
+      liftFloor:120,               // 最大直径弹珠仍保留的最小向上加速度
       liftCeiling:5000,            // 力场最大向上加速度
-      valueKnee:15370.6858,        // 升力曲线中点对应的初始弹珠数值
-      valueExponent:1.43348205,    // 升力随弹珠数值衰减的曲线陡峭度
-      scalePeriodSeconds:180,      // 每次阈值成长周期
-      valueScalePerPeriod:8        // 每周期同等升力对应数值放大倍数
+      sizeExponent:1.43348205      // 升力随弹珠直径衰减的曲线陡峭度
     }),
     collision:Object.freeze({
       ballHashCell:64,             // 大于当前最大弹珠直径 50px，邻格查询即可覆盖碰撞
@@ -1068,15 +1065,12 @@
   const BALL_RADIUS_PER_DOUBLING=1;
   const BALL_RADIUS_MAX=25;
 
-  // 力场阈值随模拟时间连续增长：每 180 秒，同等升力对应的弹珠数值扩大 8 倍。
+  // 力场只按弹珠当前直径计算，不再随模拟时间漂移。
   const GAP_FIELD_LIFT_FLOOR=TUNING.gapField.liftFloor;
   const GAP_FIELD_LIFT_CEILING=TUNING.gapField.liftCeiling;
-  const GAP_FIELD_VALUE_KNEE=TUNING.gapField.valueKnee;
-  const GAP_FIELD_VALUE_EXPONENT=TUNING.gapField.valueExponent;
-  const GAP_FIELD_VALUE_SCALE_PERIOD=TUNING.gapField.scalePeriodSeconds;
-  const GAP_FIELD_VALUE_SCALE_PER_PERIOD=TUNING.gapField.valueScalePerPeriod;
-  const GAP_FIELD_8K_REFERENCE=8000;
-  const GAP_FIELD_200K_REFERENCE=200000;
+  const GAP_FIELD_SIZE_EXPONENT=TUNING.gapField.sizeExponent;
+  const GAP_FIELD_MIN_DIAMETER=BALL_RADIUS_BASE*2;
+  const GAP_FIELD_MAX_DIAMETER=BALL_RADIUS_MAX*2;
 
   // 力场入口防堆积。
   const GAP_FIELD_GRAVITY_REFERENCE=680;
@@ -1938,19 +1932,12 @@
     return multCells.find(cell=>cell.type==='gap')||null;
   }
 
-  function getGapFieldValueScale(){
-    const elapsed=Math.max(0,simulationElapsed);
-    const scale=Math.pow(GAP_FIELD_VALUE_SCALE_PER_PERIOD,elapsed/GAP_FIELD_VALUE_SCALE_PERIOD);
-    return Number.isFinite(scale)?scale:Number.MAX_VALUE;
-  }
-
   function getGapUpwardAcceleration(ball){
-    const safeValue=Number.isFinite(ball.value)?Math.max(1,ball.value):Number.MAX_VALUE;
-    const valueScale=getGapFieldValueScale();
-    const dynamicKnee=GAP_FIELD_VALUE_KNEE*valueScale;
-    const ratio=Math.pow(safeValue/dynamicKnee,GAP_FIELD_VALUE_EXPONENT);
-    return Math.min(GAP_FIELD_LIFT_CEILING,
-      GAP_FIELD_LIFT_FLOOR+(GAP_FIELD_LIFT_CEILING-GAP_FIELD_LIFT_FLOOR)/(1+ratio));
+    const rawDiameter=Number.isFinite(ball.r)?ball.r*2:GAP_FIELD_MAX_DIAMETER;
+    const diameter=Math.max(GAP_FIELD_MIN_DIAMETER,Math.min(GAP_FIELD_MAX_DIAMETER,rawDiameter));
+    const sizeProgress=(diameter-GAP_FIELD_MIN_DIAMETER)/Math.max(1,GAP_FIELD_MAX_DIAMETER-GAP_FIELD_MIN_DIAMETER);
+    const inverseSize=Math.pow(1-sizeProgress,GAP_FIELD_SIZE_EXPONENT);
+    return GAP_FIELD_LIFT_FLOOR+(GAP_FIELD_LIFT_CEILING-GAP_FIELD_LIFT_FLOOR)*inverseSize;
   }
 
   function applyGapUpdraft(ball,dt){
@@ -4635,8 +4622,8 @@
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
-  log('Demo v79 已启动：中央空隙改为尺寸选择性向上力场；弹珠数值越大半径越大，受到的升力越弱，大球可自然进入下层。');
-  log('Demo v81 已启动：升力已改为随数值连续衰减；8K 在普通下落速度下无法突破，200K 可自然穿过，高速下坠仍可凭惯性突破。');
+  log('Demo v79 已启动：中央空隙改为按弹珠直径选择性向上力场；直径越大，受到的升力越弱，大球可自然进入下层。');
+  log('Demo v81 已启动：升力仅按当前弹珠直径连续衰减，不再随运行时间变化；高速下坠仍可凭惯性突破。');
   log('Demo v75 已启动：倍率增幅区的乘区分界线已实体化；小球在倍率区内触碰各分界边时会直接发生碰撞反弹。');
   log('Demo v68 已启动：火力生成矩阵左右两侧已加入反弹壁；小球触壁时会额外获得当前速度 2 倍的水平向左冲量，并带有短接触冷却以避免贴墙连锁触发。');
   log('Demo v73 已启动：模拟速度范围扩大为 0.25×–10×，并加入实时倍率显示与动态模拟步数上限。');
