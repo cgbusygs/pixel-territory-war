@@ -602,7 +602,10 @@
       ballPasses:3,                // 多轮位置修正，降低拥挤区残余重叠
       maxSubsteps:4,               // 移动端或高速状态下增加物理微步，避免穿透
       maxTravelPerStep:5,          // 单微步最大位移，低于最小弹珠半径
-      energyRetention:.90          // 弹珠互撞与转盘点碰撞统一保留 90% 可耗散动能
+      energyRetention:.90,         // 低速弹珠互撞与转盘点碰撞统一保留 90% 可耗散动能
+      speedResponseReference:600,  // 超过该合速度后，碰撞恢复系数开始随速度衰减
+      speedResponseExponent:.75,   // 高速碰撞恢复系数的衰减曲线
+      speedResponseFloor:.35       // 高速碰撞仍保留的最小恢复比例
     }),
     multiplierEntry:Object.freeze({
       largeDiameterToOpening:.72,  // 弹珠直径达到入口有效宽度此比例后，视为较大弹珠
@@ -642,6 +645,9 @@
     ui:Object.freeze({maxLogEntries:32})
   });
   const MARBLE_COLLISION_SPEED_RETAIN=Math.sqrt(TUNING.collision.energyRetention);
+  const COLLISION_SPEED_RESPONSE_REFERENCE=TUNING.collision.speedResponseReference;
+  const COLLISION_SPEED_RESPONSE_EXPONENT=TUNING.collision.speedResponseExponent;
+  const COLLISION_SPEED_RESPONSE_FLOOR=TUNING.collision.speedResponseFloor;
 
   function get2DContext(canvas,options){return canvas.getContext('2d',options)||canvas.getContext('2d');}
   const lctx=get2DContext(leftCanvas,{alpha:false,desynchronized:true});
@@ -1629,13 +1635,16 @@
         const pegVx=-angularSpeed*ry,pegVy=angularSpeed*rx;
         const relativeNormal=(b.vx-pegVx)*nx+(b.vy-pegVy)*ny;
         if(relativeNormal>=0)return;
-        const relativeBounce=-(1+speedRetention)*relativeNormal;
+        const relativeSpeed=Math.hypot(b.vx-pegVx,b.vy-pegVy);
+        const effectiveRetention=speedRetention*getCollisionSpeedResponse(relativeSpeed);
+        const relativeBounce=-(1+effectiveRetention)*relativeNormal;
         b.vx+=relativeBounce*nx;b.vy+=relativeBounce*ny;
       }else{
         const dot=b.vx*nx+b.vy*ny;
         if(dot>=0)return;
-        b.vx-=dot*(1+speedRetention)*nx;
-        b.vy-=dot*(1+speedRetention)*ny;
+        const effectiveRetention=speedRetention*getCollisionSpeedResponse(Math.hypot(b.vx,b.vy));
+        b.vx-=dot*(1+effectiveRetention)*nx;
+        b.vy-=dot*(1+effectiveRetention)*ny;
       }
     }
   }
@@ -1669,7 +1678,7 @@
     const normalVelocity=rvx*nx+rvy*ny;
     if(normalVelocity>=0)return;
 
-    const restitution=MARBLE_COLLISION_SPEED_RETAIN;
+    const restitution=MARBLE_COLLISION_SPEED_RETAIN*getCollisionSpeedResponse(Math.hypot(rvx,rvy));
     const impulse=-(1+restitution)*normalVelocity/(1/massA+1/massB);
     const ix=impulse*nx,iy=impulse*ny;
     a.vx-=ix/massA;a.vy-=iy/massA;
@@ -1773,8 +1782,9 @@
     ball.y+=ny*penetration;
     const vn=ball.vx*nx+ball.vy*ny;
     if(vn<0){
-      ball.vx-=(1+restitution)*vn*nx;
-      ball.vy-=(1+restitution)*vn*ny;
+      const effectiveRestitution=restitution*getCollisionSpeedResponse(Math.hypot(ball.vx,ball.vy));
+      ball.vx-=(1+effectiveRestitution)*vn*nx;
+      ball.vy-=(1+effectiveRestitution)*vn*ny;
       capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED*1.12);
     }
   }
@@ -1882,6 +1892,14 @@
     }
   }
 
+  function getCollisionSpeedResponse(speed){
+    const safeSpeed=Math.max(0,Number.isFinite(speed)?speed:0);
+    if(safeSpeed<=COLLISION_SPEED_RESPONSE_REFERENCE)return 1;
+    const excessRatio=(safeSpeed-COLLISION_SPEED_RESPONSE_REFERENCE)/COLLISION_SPEED_RESPONSE_REFERENCE;
+    return Math.max(COLLISION_SPEED_RESPONSE_FLOOR,
+      Math.pow(1+excessRatio,-COLLISION_SPEED_RESPONSE_EXPONENT));
+  }
+
   function resolveMatrixSideReboundWall(ball,dt){
     if(ball.sideWallKickCooldown>0)ball.sideWallKickCooldown-=dt;
     let touched='';
@@ -1900,7 +1918,8 @@
     if(touched){
       if(ball.sideWallKickCooldown<=0||ball.sideWallSide!==touched){
         const inwardDirection=touched==='left'?1:-1;
-        ball.vx=inwardDirection*Math.max(40,preSpeed*MATRIX_SIDE_WALL_KICK_MULT);
+        const speedResponse=getCollisionSpeedResponse(preSpeed);
+        ball.vx=inwardDirection*Math.max(40,preSpeed*MATRIX_SIDE_WALL_KICK_MULT*speedResponse);
         ball.sideWallKickCooldown=MATRIX_SIDE_WALL_COOLDOWN;
         ball.sideWallSide=touched;
       }
@@ -4656,6 +4675,7 @@
   log('Demo v151 已启动：升力端点调整为半径 6px 对应 15000、半径 25px 对应 110。');
   log('Demo v152 已启动：弹珠互撞与转盘碰撞点的单次动能损失调整为 10%，速度保留系数为 √0.90。');
   log('Demo v153 已启动：四个转盘统一转速调整为原设定的 80%，当前角速度为 2.52。');
+  log('Demo v154 已启动：弹珠速度越高，碰撞恢复系数与侧壁额外冲量越低，避免高速碰撞持续放大速度。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
