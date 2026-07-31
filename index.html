@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v144 · Orbital Shield FX</title>
+  <title>像素领土战争 Demo v145 · Territory Contact Fix</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v144</h1>
+        <h1>像素领土战争 · 战场态势 v145</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -2497,7 +2497,7 @@
   function paintProjectilePath(p,x1,y1,x2,y2){
     let remaining=Math.max(0,Math.floor(p.firepower));
     if(remaining<=0)return {spent:0,exhausted:true,x:x1,y:y1};
-    const initialRadius=p.kind==='machine'?1.65*MACHINE_COLLISION_SCALE*MACHINE_CONTACT_SCALE:p.kind==='orb'?p.r:p.kind==='sniper'?1.35:2.8;
+    const initialRadius=projectileTerritoryRadius(p);
     const length=Math.hypot(x2-x1,y2-y1),spacing=Math.max(1.1,Math.min(4.0,initialRadius*.92)),steps=Math.max(1,Math.ceil(length/spacing));
     const refreshOwned=p.kind==='orb'||p.kind==='scatter'||p.kind==='sniper';
     let spentTotal=0,lastX=x1,lastY=y1;
@@ -2512,6 +2512,42 @@
     }
     if(p.kind!=='orb')syncProjectileFirepower(p,remaining);
     return {spent:spentTotal,exhausted:remaining<=0,x:lastX,y:lastY};
+  }
+
+  function projectileTerritoryRadius(p){
+    return p.kind==='machine'?1.65*MACHINE_COLLISION_SCALE*MACHINE_CONTACT_SCALE:p.kind==='orb'?p.r:p.kind==='sniper'?1.35:2.8;
+  }
+
+  function territoryOwnerAtPoint(x,y){
+    const gx=Math.max(0,Math.min(GRID_W-1,Math.floor(x/WV.w*GRID_W)));
+    const gy=Math.max(0,Math.min(GRID_H-1,Math.floor(y/WV.h*GRID_H)));
+    return owner[gy*GRID_W+gx];
+  }
+
+  function projectileTouchesForeignTerritory(p,x=p.x,y=p.y){
+    const centerOwner=territoryOwnerAtPoint(x,y);
+    if(centerOwner!==255&&centerOwner!==p.faction)return true;
+    const speed=Math.hypot(p.vx,p.vy);
+    if(speed<1e-6)return false;
+    const radius=projectileTerritoryRadius(p),nx=p.vx/speed,ny=p.vy/speed;
+    // 检查运动前缘和两侧接触点，避免弹体光效已经压上敌方格子、中心点却仍在己方格内。
+    const leadX=x+nx*radius,leadY=y+ny*radius;
+    const sideOffset=radius*.72,sideX=-ny*sideOffset,sideY=nx*sideOffset;
+    const leadOwner=territoryOwnerAtPoint(leadX,leadY);
+    if(leadOwner!==255&&leadOwner!==p.faction)return true;
+    const leftOwner=territoryOwnerAtPoint(x+sideX,y+sideY);
+    if(leftOwner!==255&&leftOwner!==p.faction)return true;
+    const rightOwner=territoryOwnerAtPoint(x-sideX,y-sideY);
+    return rightOwner!==255&&rightOwner!==p.faction;
+  }
+
+  function paintProjectileBeforePairHit(p,x,y){
+    if(p.dead||p.firepower<=0)return true;
+    const result=paintProjectilePath(p,p.paintX,p.paintY,x,y);
+    p.paintX=result.x;p.paintY=result.y;
+    if(!result.exhausted)return false;
+    p.x=result.x;p.y=result.y;p.prevX=result.x;p.prevY=result.y;p.dead=true;
+    return true;
   }
 
   function applyLine(x1,y1,x2,y2,faction,firepower){
@@ -3054,6 +3090,11 @@
     if(sameFaction&&!friendlyOrbMachine&&!friendlyOrbPair)return false;
 
     const hit=sweptProjectilePairHit(p,q);if(!hit)return false;
+    // 弹丸可能在两次低频领土刷新之间相撞并消失；先补算双方到真实碰撞点的路径，
+    // 保证已经触碰到的敌方领土不会因为弹丸提前销毁而漏占领。
+    const pExhausted=paintProjectileBeforePairHit(p,hit.ax,hit.ay);
+    const qExhausted=paintProjectileBeforePairHit(q,hit.bx,hit.by);
+    if(pExhausted||qExhausted)return p.dead;
 
     if(friendlyOrbMachine){
       const orb=pKind===PROJECTILE_COLLISION_KIND.ORB?p:q;
@@ -3242,7 +3283,8 @@
       const endX=hit?hit.x:p.x,endY=hit?hit.y:p.y;
       let paintResult=null;
       // 与可交互对象碰撞时立即补算路径，避免低频领土刷新导致穿透后再染色。
-      if(paintNow||hit){
+      const foreignTerritoryContact=projectileTouchesForeignTerritory(p,endX,endY);
+      if(paintNow||hit||foreignTerritoryContact){
         paintResult=paintProjectilePath(p,p.paintX,p.paintY,endX,endY);
         p.paintX=paintResult.x;p.paintY=paintResult.y;
       }
@@ -3339,7 +3381,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v144-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v145-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -3717,44 +3759,62 @@
   function drawBaseValueIcon(ctx,type,x,y,color,flash=0){
     ctx.save();
     if(flash>0){
-      const glow=ctx.createRadialGradient(x,y,0,x,y,16);
-      glow.addColorStop(0,colorWithAlpha('#ffffff',.34*flash));
-      glow.addColorStop(.42,colorWithAlpha(color,.22*flash));
+      const glow=ctx.createRadialGradient(x,y,0,x,y,12);
+      glow.addColorStop(0,colorWithAlpha('#ffffff',.28*flash));
+      glow.addColorStop(.46,colorWithAlpha(color,.18*flash));
       glow.addColorStop(1,colorWithAlpha(color,0));
-      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,16,0,TAU);ctx.fill();
+      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,12,0,TAU);ctx.fill();
     }
-    ctx.strokeStyle=flash>0?mixHexColors(color,'#ffffff',.78):mixHexColors(color,'#dff8ff',.46);
-    ctx.fillStyle=colorWithAlpha(color,.12+.12*flash);
-    ctx.lineWidth=1.25+flash*.7;ctx.lineJoin='round';ctx.shadowColor=color;ctx.shadowBlur=3+flash*7;
+    ctx.strokeStyle=flash>0?mixHexColors(color,'#ffffff',.82):mixHexColors(color,'#dff8ff',.58);
+    ctx.fillStyle=colorWithAlpha(color,.08+.12*flash);
+    ctx.lineWidth=1.05+flash*.55;ctx.lineJoin='round';ctx.lineCap='round';ctx.shadowColor=color;ctx.shadowBlur=2+flash*5;
     if(type==='shield'){
       ctx.beginPath();
       for(let i=0;i<6;i++){
-        const angle=-Math.PI/2+i*TAU/6,px=x+Math.cos(angle)*7,py=y+Math.sin(angle)*7;
+        const angle=-Math.PI/2+i*TAU/6,px=x+Math.cos(angle)*6,py=y+Math.sin(angle)*6;
         if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
       }
       ctx.closePath();ctx.fill();ctx.stroke();
-      ctx.globalAlpha=.72;ctx.beginPath();ctx.moveTo(x,y-4);ctx.lineTo(x,y+4);ctx.stroke();
+      ctx.globalAlpha=.78;ctx.lineWidth=.85;
+      ctx.beginPath();ctx.arc(x,y,3.05,-Math.PI*.72,Math.PI*.72);ctx.stroke();
+      ctx.fillStyle=flash>0?'#ffffff':mixHexColors(color,'#ffffff',.54);
+      ctx.beginPath();ctx.arc(x,y,1.15,0,TAU);ctx.fill();
     }else{
-      roundedRectPath(ctx,x-7,y-7,14,14,2);ctx.fill();ctx.stroke();
-      ctx.globalAlpha=.88;ctx.lineWidth=1;
-      for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(x+i*3.2,y-4.6);ctx.lineTo(x+i*3.2,y+4.6);ctx.stroke();}
+      roundedRectPath(ctx,x-6,y-6,12,12,1.8);ctx.fill();ctx.stroke();
+      ctx.globalAlpha=.86;ctx.lineWidth=.85;
+      for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(x+i*2.65,y-3.9);ctx.lineTo(x+i*2.65,y+3.9);ctx.stroke();}
+      ctx.globalAlpha=.94;ctx.beginPath();ctx.moveTo(x-4.5,y+6.2);ctx.lineTo(x+4.5,y+6.2);ctx.stroke();
     }
     ctx.restore();
   }
 
   function drawBaseValueRow(ctx,type,value,y,color,flash,fontSize){
-    if(flash>0){
-      ctx.save();ctx.globalAlpha=.08+.16*flash;ctx.fillStyle=color;roundedRectPath(ctx,30,y-11,126,22,6);ctx.fill();ctx.restore();
-    }
-    drawBaseValueIcon(ctx,type,44,y,color,flash);
+    const actualFontSize=fontSize+flash*1.45;
+    const font=`800 ${actualFontSize}px "Bahnschrift SemiCondensed","Microsoft YaHei",sans-serif`;
+    ctx.save();ctx.font=font;
+    const iconWidth=13,gap=5,textWidth=ctx.measureText(value).width;
+    const groupWidth=iconWidth+gap+textWidth,startX=90-groupWidth*.5;
+    const panelX=startX-7,panelW=groupWidth+14;
+    const panel=ctx.createLinearGradient(panelX,y,panelX+panelW,y);
+    panel.addColorStop(0,'rgba(1,8,18,.36)');
+    panel.addColorStop(.35,colorWithAlpha(color,.045+.08*flash));
+    panel.addColorStop(1,'rgba(1,8,18,.24)');
+    ctx.fillStyle=panel;roundedRectPath(ctx,panelX,y-10,panelW,20,5);ctx.fill();
+    ctx.globalAlpha=.28+.42*flash;ctx.strokeStyle=flash>0?mixHexColors(color,'#ffffff',.58):colorWithAlpha(color,.54);
+    ctx.lineWidth=.65+flash*.55;roundedRectPath(ctx,panelX,y-10,panelW,20,5);ctx.stroke();
+    ctx.globalAlpha=.26+.44*flash;ctx.strokeStyle=flash>0?'#ffffff':color;
+    ctx.beginPath();ctx.moveTo(panelX+7,y+9.5);ctx.lineTo(panelX+panelW-7,y+9.5);ctx.stroke();
+    ctx.restore();
+
+    drawBaseValueIcon(ctx,type,startX+iconWidth*.5,y,color,flash);
     const fill=flash>0?mixHexColors(color,'#ffffff',.72+.22*flash):'#edfaff';
-    drawText(ctx,value,102,y,{
+    drawText(ctx,value,startX+iconWidth+gap,y+.25,{
       fillStyle:fill,
-      font:`800 ${fontSize+flash*2.2}px monospace`,
-      align:'center',
+      font,
+      align:'left',
       baseline:'middle',
-      shadowColor:flash>0?color:'rgba(13,64,92,.56)',
-      shadowBlur:flash>0?4+flash*8:2
+      shadowColor:flash>0?color:'rgba(13,64,92,.48)',
+      shadowBlur:flash>0?3+flash*6:1.5
     });
   }
 
@@ -4485,7 +4545,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log('Demo v144 已启动：大球与大球、护盾的反弹动量衰减归零；护盾内部亮度由中心 20 向边缘 180 非线性增长并顺时针旋转；基地护盾/机枪 HUD、友军子弹吸收和敌弹边缘命中特效已重做。');
+  log('Demo v145 已启动：敌方领土接触改为即时前缘取样，并在弹丸碰撞销毁前补算最后路径；基地护盾与机枪数值改为图标和文字整体居中的能量状态条。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
