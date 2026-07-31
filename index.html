@@ -797,11 +797,11 @@
   const SNIPER_PROJECTILE_SPEED=820;
   const SNIPER_PROJECTILE_DIAMETER=3.5;
   const SNIPER_TERRITORY_RADIUS=3;
-  const SNIPER_AIM_MIN_SECONDS=5;
-  const SNIPER_AIM_MAX_SECONDS=6;
+  const SNIPER_AIM_MIN_SECONDS=10;
+  const SNIPER_AIM_MAX_SECONDS=12;
   const SNIPER_LOCK_DELAY_SECONDS=1;
-  const SNIPER_PICK_INTERVAL_FAST=.06;
-  const SNIPER_PICK_INTERVAL_SLOW=.46;
+  const SNIPER_PICK_INTERVAL_FAST=.15;
+  const SNIPER_PICK_INTERVAL_SLOW=.8;
   const SNIPER_TRAIL_LIFETIME=10;
   const SNIPER_TRAIL_FADE_LAYERS=8;
   const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
@@ -4530,6 +4530,31 @@
     wctx.restore();
   }
 
+  function drawSniperReticle(x,y,color,scale,rotation,locked,alpha,pulse){
+    const light=locked?'#ffffff':mixHexColors(color,'#ffffff',.78);
+    const inner=scale*.34,ring=scale*.78,outer=scale*1.18,arm=scale*.16;
+    wctx.save();wctx.translate(x,y);wctx.rotate(rotation);wctx.globalAlpha=alpha;wctx.lineCap='square';wctx.lineJoin='miter';
+    // 参考准星的四段内环：每个象限留出明显断口。
+    wctx.strokeStyle=color;wctx.lineWidth=locked?1.5:1.0;wctx.beginPath();
+    for(let i=0;i<4;i++){
+      const start=i*Math.PI/2+.14,end=(i+1)*Math.PI/2-.14;
+      wctx.moveTo(Math.cos(start)*ring,Math.sin(start)*ring);wctx.arc(0,0,ring,start,end);
+    }
+    wctx.stroke();
+    // 四向长臂与端部横档，复刻 SVG 瞄准器的十字结构。
+    wctx.strokeStyle=light;wctx.lineWidth=locked?1.7:1.15;
+    for(let i=0;i<4;i++){
+      const a=i*Math.PI/2,cos=Math.cos(a),sin=Math.sin(a),tx=cos*outer,ty=sin*outer;
+      wctx.beginPath();wctx.moveTo(cos*inner,sin*inner);wctx.lineTo(tx,ty);wctx.stroke();
+      const px=-sin,py=cos;
+      wctx.lineWidth=locked?2.2:1.45;wctx.beginPath();wctx.moveTo(tx-px*arm,ty-py*arm);wctx.lineTo(tx+px*arm,ty+py*arm);wctx.stroke();
+    }
+    wctx.strokeStyle=color;wctx.lineWidth=locked?1.4:.9;wctx.beginPath();wctx.arc(0,0,inner,0,TAU);wctx.stroke();
+    wctx.globalAlpha=alpha*(.26+.24*pulse);wctx.strokeStyle=light;wctx.lineWidth=locked?3.2:2.2;wctx.beginPath();wctx.arc(0,0,outer*1.08,0,TAU);wctx.stroke();
+    wctx.globalAlpha=alpha*(locked?.96:.78);wctx.fillStyle=light;wctx.beginPath();wctx.arc(0,0,Math.max(2.2,scale*.07),0,TAU);wctx.fill();
+    wctx.restore();
+  }
+
   function drawSniperTargeting(){
     if(sniperAimJobs.length===0)return;
     const now=performance.now()/1000;
@@ -4543,20 +4568,13 @@
       const candidates=getSniperTargetCandidates(job.faction);
       for(const candidate of candidates){
         const bx=FACTIONS[candidate].base[0]*WV.w,by=FACTIONS[candidate].base[1]*WV.h;
-        const candidateAlpha=candidate===targetFaction?(locked?.58:.24):.10;
-        wctx.globalAlpha=candidateAlpha;wctx.strokeStyle=FACTIONS[candidate].color;wctx.lineWidth=candidate===targetFaction?1.15:.65;
-        wctx.beginPath();wctx.arc(bx,by,BASE_OUTER_RADIUS+8+(candidate===targetFaction?pulse*4:0),0,TAU);wctx.stroke();
+        const isCurrent=candidate===targetFaction,candidateAlpha=isCurrent?(locked?.88:.58):.14;
+        const candidateScale=isCurrent?BASE_OUTER_RADIUS+18+pulse*5:BASE_OUTER_RADIUS*.78;
+        drawSniperReticle(bx,by,FACTIONS[candidate].color,candidateScale,now*(isCurrent?(locked?.12:.42):.08),isCurrent&&locked,candidateAlpha,pulse);
       }
       wctx.globalAlpha=locked?.28:.15;wctx.strokeStyle=source.color;wctx.lineWidth=locked?1.7:1;
       wctx.setLineDash(locked?[]:[5,10]);wctx.beginPath();wctx.moveTo(sx,sy);wctx.lineTo(tx,ty);wctx.stroke();wctx.setLineDash([]);
-      const ring=BASE_OUTER_RADIUS+14+(locked?pulse*5:0);
-      wctx.globalAlpha=locked?.92:.58+.18*pulse;wctx.strokeStyle=locked?'#ffffff':target.color;wctx.lineWidth=locked?1.8:1.25;
-      wctx.beginPath();wctx.arc(tx,ty,ring,0,TAU);wctx.stroke();
-      const tick=locked?11:8;
-      for(let k=0;k<4;k++){
-        const a=k*Math.PI/2+now*(locked?.12:.42),cos=Math.cos(a),sin=Math.sin(a);
-        wctx.beginPath();wctx.moveTo(tx+cos*(ring-tick),ty+sin*(ring-tick));wctx.lineTo(tx+cos*(ring+tick),ty+sin*(ring+tick));wctx.stroke();
-      }
+      const ring=BASE_OUTER_RADIUS+32+pulse*5;
       const remaining=locked?Math.max(0,SNIPER_LOCK_DELAY_SECONDS-job.lockElapsed):Math.max(0,job.duration-job.elapsed);
       wctx.globalAlpha=.88;wctx.fillStyle=locked?'#ffffff':source.color;wctx.font='700 10px monospace';
       wctx.fillText(locked?`LOCKED ${remaining.toFixed(1)}s`:`SCAN ${remaining.toFixed(1)}s`,tx,ty-ring-10);
@@ -4944,6 +4962,7 @@
   log('Demo v160 已启动：已兑现小球直径统计细化为每 0.5px 一个区间，50px及以上归入末档。');
   log('Demo v161 已启动：狙击改为单枚直径 3.5px、占领半径 3px；发射前进行 5–6 秒随机减速锁定，锁定后 1 秒发射，并启用长持续尾迹。');
   log('Demo v162 已启动：狙击尾迹改为按独立轨迹段年龄分层衰减，最长可见约 10 秒，避免连续叠加造成永久残留观感。');
+  log('Demo v163 已启动：狙击随机扫描延长至 10–12 秒，目标切换间隔由 0.15 秒渐进到 0.8 秒，并替换为四向准星瞄准器动画。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
