@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v145 · Territory Contact Fix</title>
+  <title>像素领土战争 Demo v146 · Rotor 60FPS</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v145</h1>
+        <h1>像素领土战争 · 战场态势 v146</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -545,7 +545,7 @@
     name:'Mobile 60FPS Safe',
     simulationHz:60,
     renderHz:60,
-    leftRenderHz:18,
+    leftRenderHz:60,
     territoryHz:22,
     territoryUploadHz:18,
     trailHz:30,
@@ -561,7 +561,7 @@
     name:'RTX 120FPS Adaptive',
     simulationHz:120,
     renderHz:120,
-    leftRenderHz:24,
+    leftRenderHz:60,
     territoryHz:40,
     territoryUploadHz:40,
     trailHz:60,
@@ -1080,9 +1080,6 @@
   // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值。
   const PEG_DISC_ORBIT_RADIUS=123.552;
   const PEG_DISC_SPIN_SPEED=3.15;
-  const PEG_DISC_ROTOR_INERTIA=7200;
-  const PEG_DISC_MAX_SPIN_SPEED=8.5;
-  const PEG_DISC_MOTOR_RESPONSE=.75;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
@@ -1104,7 +1101,7 @@
 
   function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0){
     const baseAngularSpeed=PEG_DISC_SPIN_SPEED*spinDir;
-    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:baseAngularSpeed,baseAngularSpeed,inertia:PEG_DISC_ROTOR_INERTIA,spinDir,pegs:[]};
+    const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:baseAngularSpeed,baseAngularSpeed,spinDir,pegs:[]};
     const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0,rotor};
     rotor.pegs.push(centerPeg); targetPegs.push(centerPeg);
     for(let i=0;i<6;i++){
@@ -1129,16 +1126,20 @@
   }
 
   function updatePegRotors(dt){
-    const motorBlend=1-Math.exp(-PEG_DISC_MOTOR_RESPONSE*dt);
     for(const rotor of upperRotors){
-      rotor.angularSpeed+=(rotor.baseAngularSpeed-rotor.angularSpeed)*motorBlend;
-      rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt);updateRotorPegPositions(rotor);
+      rotor.angularSpeed=rotor.baseAngularSpeed;
+      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor);
     }
     for(const rotor of lowerRotors){
-      rotor.angularSpeed+=(rotor.baseAngularSpeed-rotor.angularSpeed)*motorBlend;
-      rotor.angle=normalizeAngle(rotor.angle+rotor.angularSpeed*dt);updateRotorPegPositions(rotor);
+      rotor.angularSpeed=rotor.baseAngularSpeed;
+      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor);
     }
   }
+
+  window.__rotorDebug=()=>({
+    upper:upperRotors.map(rotor=>({angle:rotor.angle,angularSpeed:rotor.angularSpeed,baseAngularSpeed:rotor.baseAngularSpeed,spinDir:rotor.spinDir})),
+    lower:lowerRotors.map(rotor=>({angle:rotor.angle,angularSpeed:rotor.angularSpeed,baseAngularSpeed:rotor.baseAngularSpeed,spinDir:rotor.spinDir}))
+  });
 
   function buildBoard(){
     buildPegRotors(); multCells.length=0; multBoundaries.length=0; converterCells.length=0;
@@ -1567,15 +1568,12 @@
       const rotor=p.rotor;
       if(rotor&&!p.isCenter){
         const rx=p.x-rotor.cx,ry=p.y-rotor.cy;
-        const pegVx=-rotor.angularSpeed*ry,pegVy=rotor.angularSpeed*rx;
+        const angularSpeed=rotor.baseAngularSpeed;
+        const pegVx=-angularSpeed*ry,pegVy=angularSpeed*rx;
         const relativeNormal=(b.vx-pegVx)*nx+(b.vy-pegVy)*ny;
         if(relativeNormal>=0)return;
-        const ballMass=Math.max(1,b.r*b.r);
-        const lever=rx*ny-ry*nx;
-        const effectiveInvMass=1/ballMass+lever*lever/rotor.inertia;
-        const impulse=-(1+speedRetention)*relativeNormal/effectiveInvMass;
-        b.vx+=impulse*nx/ballMass;b.vy+=impulse*ny/ballMass;
-        rotor.angularSpeed=Math.max(-PEG_DISC_MAX_SPIN_SPEED,Math.min(PEG_DISC_MAX_SPIN_SPEED,rotor.angularSpeed-impulse*lever/rotor.inertia));
+        const relativeBounce=-(1+speedRetention)*relativeNormal;
+        b.vx+=relativeBounce*nx;b.vy+=relativeBounce*ny;
       }else{
         const dot=b.vx*nx+b.vy*ny;
         if(dot>=0)return;
@@ -3381,7 +3379,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v145-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v146-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -4467,7 +4465,7 @@
     if(monochromeHoldSeconds>=MONOCHROME_WIN_SECONDS-1e-9)completeMonochromeVictory(fullFaction);
   }
 
-  let lastLeftDraw=0,renderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+  let renderAccumulatorMs=0,leftRenderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
   function simulateStep(dt){
     territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
@@ -4487,11 +4485,11 @@
       while(simAccumulator>=SIM_STEP&&steps<maxSimSteps&&!paused){simulateStep(SIM_STEP);simAccumulator-=SIM_STEP;steps++;}
       if(steps===maxSimSteps&&simAccumulator>SIM_STEP*4)simAccumulator=SIM_STEP*4;
     }else simAccumulator=0;
-    const renderInterval=1000/PERF_PROFILE.renderHz;
-    renderAccumulatorMs+=elapsed*1000;
+    const renderInterval=1000/PERF_PROFILE.renderHz,leftRenderInterval=1000/PERF_PROFILE.leftRenderHz;
+    renderAccumulatorMs+=elapsed*1000;leftRenderAccumulatorMs+=elapsed*1000;
     if(renderAccumulatorMs>=renderInterval){
       renderAccumulatorMs%=renderInterval;
-      if(now-lastLeftDraw>=1000/PERF_PROFILE.leftRenderHz){drawLeft();lastLeftDraw=now;}
+      if(leftRenderAccumulatorMs>=leftRenderInterval){leftRenderAccumulatorMs%=leftRenderInterval;drawLeft();}
       drawWar();fpsFrames++;
     }
     if(now-fpsWindowStart>=500){displayFps=Math.round(fpsFrames*1000/(now-fpsWindowStart));fpsFrames=0;fpsWindowStart=now;}
@@ -4512,7 +4510,7 @@
     previousOrbPairContacts.clear();currentOrbPairContacts.clear();
     resetTopHitCounts();
     buildPegRotors();resetTerritory();initializeFixedBallPool();
-    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;
+    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
     gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
     if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
     if(UI.feed)UI.feed.innerHTML='';
@@ -4535,7 +4533,7 @@
   if(UI.pauseBtn)UI.pauseBtn.addEventListener('click',e=>{if(gameEnded)return;paused=!paused;e.target.textContent=paused?'继续':'暂停';updateStats();});
   if(UI.recordGameBtn)UI.recordGameBtn.addEventListener('click',startMatchRecording);
   if(UI.stopRecordBtn)UI.stopRecordBtn.addEventListener('click',()=>stopMatchRecording('手动结束'));
-  document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;});
+  document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;});
   if(UI.resetBtn)UI.resetBtn.addEventListener('click',()=>{
     if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
     resetGame();
@@ -4545,7 +4543,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log('Demo v145 已启动：敌方领土接触改为即时前缘取样，并在弹丸碰撞销毁前补算最后路径；基地护盾与机枪数值改为图标和文字整体居中的能量状态条。');
+  log('Demo v146 已启动：四个转盘改为恒速电机模型，弹珠仍受运动碰撞点推动但不再改变转盘角速度；左侧渲染统一为 60 FPS。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
