@@ -2345,7 +2345,11 @@
     }
 
     if(weapon==='scatter'){
-      const requested=Math.min(48,16+Math.round(totalVisualPower*2.2));
+      // 领地占领成本每 3 分钟递增；限制霰弹分裂数量，保证每枚有效弹丸
+      // 至少携带当前一个方格所需的火力，避免中后期全部变成 1 火力而无法染色。
+      const captureCost=getTerritoryCaptureFirepower();
+      const maxCapturingPellets=Math.max(1,Math.floor(totalFirepower/captureCost));
+      const requested=Math.min(48,maxCapturingPellets,16+Math.round(totalVisualPower*2.2));
       const allocations=distributeIntegerFirepower(totalFirepower,requested);
       for(let i=0;i<allocations.length;i++){
         queueProjectile(i*.008,{
