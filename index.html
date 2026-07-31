@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v143 · Escalating Territory</title>
+  <title>像素领土战争 Demo v144 · Orbital Shield FX</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v143</h1>
+        <h1>像素领土战争 · 战场态势 v144</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -695,6 +695,8 @@
   const INITIAL_MACHINE_FIREPOWER=400000;
   const shieldValue=Array.from({length:4},()=>INITIAL_SHIELD_VALUE);
   const shieldFlash=[0,0,0,0];
+  const shieldGainFlash=[0,0,0,0];
+  const machineGainFlash=[0,0,0,0];
   const eliminated=[false,false,false,false];
   const eliminationFlash=[0,0,0,0];
   const multiplierDryStreak=new Uint8Array(4);
@@ -745,6 +747,9 @@
   const SHIELD_INITIAL_RADIUS=82;
   const SHIELD_GROWTH_PER_DECADE=108;
   const SHIELD_RING_WIDTH=4;
+  const SHIELD_INTERIOR_CENTER_ALPHA=20/255;
+  const SHIELD_INTERIOR_EDGE_ALPHA=180/255;
+  const SHIELD_CLOCKWISE_ROTATION_SPEED=.46;
   const SNIPER_PROJECTILE_SPEED=820;
   const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
   const cannonAngle=INITIAL_CANNON_ANGLES.slice();
@@ -1275,15 +1280,30 @@
     return canvas;
   }
 
-  function drawShieldWithBaseOuterStyle(c,x,y,r,color,flash,brightness=1){
+  function drawShieldWithBaseOuterStyle(c,x,y,r,color,flash,brightness=1,rotation=0){
     c.save();
 
-    // 保留当前实心护盾碰撞结构，但视觉色值改回 v27 的低饱和透明阵营色。
+    // v144：护盾内部亮度按二次以上曲线从中心 20 增长到边缘 180。
+    const interiorAlpha=t=>Math.min(.96,(SHIELD_INTERIOR_CENTER_ALPHA+(SHIELD_INTERIOR_EDGE_ALPHA-SHIELD_INTERIOR_CENTER_ALPHA)*Math.pow(t,2.35))*brightness+flash*.035*t);
     const fill=c.createRadialGradient(x,y,Math.max(0,r*.12),x,y,r);
-    fill.addColorStop(0,colorWithAlpha(color,.055+.025*flash));
-    fill.addColorStop(.72,colorWithAlpha(color,.04+.02*flash));
-    fill.addColorStop(1,colorWithAlpha(color,.085+.035*flash));
+    fill.addColorStop(0,colorWithAlpha(color,interiorAlpha(0)));
+    fill.addColorStop(.34,colorWithAlpha(color,interiorAlpha(.34)));
+    fill.addColorStop(.62,colorWithAlpha(color,interiorAlpha(.62)));
+    fill.addColorStop(.82,colorWithAlpha(color,interiorAlpha(.82)));
+    fill.addColorStop(1,colorWithAlpha(color,interiorAlpha(1)));
     c.fillStyle=fill;c.beginPath();c.arc(x,y,r,0,TAU);c.fill();
+
+    // 正角度在 Canvas 坐标系中为顺时针；内部弧段和外圈刻度共用旋转相位。
+    c.save();c.beginPath();c.arc(x,y,r,0,TAU);c.clip();c.globalCompositeOperation='lighter';c.lineCap='round';
+    for(let ring=0;ring<4;ring++){
+      const rr=r*(.38+ring*.15),segments=3+ring;
+      c.strokeStyle=color;c.lineWidth=Math.max(.55,r*(.004+.0012*ring));c.globalAlpha=.055+ring*.026+flash*.035;
+      for(let segment=0;segment<segments;segment++){
+        const start=rotation+segment*TAU/segments+ring*.71;
+        c.beginPath();c.arc(x,y,rr,start,start+.34+ring*.035);c.stroke();
+      }
+    }
+    c.restore();
 
     c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=14+flash*10;c.lineCap='round';
     c.globalAlpha=.30+.20*flash;c.lineWidth=2+flash*2;
@@ -1293,10 +1313,10 @@
     c.shadowBlur=0;c.globalAlpha=.24+.12*flash;c.lineWidth=1.1;
     c.beginPath();c.arc(x,y,r+8,0,TAU);c.stroke();
     for(let i=0;i<24;i++){
-      const a=i/24*TAU,inner=r+3,outer=r+(i%3===0?10:7);
+      const angle=rotation+i/24*TAU,cos=Math.cos(angle),sin=Math.sin(angle),inner=r+3,outer=r+(i%3===0?10:7);
       c.strokeStyle=i%3===0?color:'rgba(188,232,255,.26)';
       c.lineWidth=i%3===0?1.4:.8;
-      c.beginPath();c.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner);c.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer);c.stroke();
+      c.beginPath();c.moveTo(x+cos*inner,y+sin*inner);c.lineTo(x+cos*outer,y+sin*outer);c.stroke();
     }
     c.restore();
   }
@@ -1357,7 +1377,7 @@
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
-      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
+      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
     }
   }
 
@@ -2213,8 +2233,8 @@
   const ORB_CONTACT_PADDING=1.25;
   const ORB_CONTACT_RELEASE_GAP=5;
   const ORB_SHIELD_RELEASE_GAP=6;
-  const ORB_PAIR_RESTITUTION=.88;
-  const ORB_SHIELD_RESTITUTION=.90;
+  const ORB_PAIR_RESTITUTION=1;
+  const ORB_SHIELD_RESTITUTION=1;
   const ORB_MIN_SEPARATION_SPEED=22;
   function orbDiameterFromFirepower(firepower){
     const value=Math.max(1,Number(firepower)||0);
@@ -2244,19 +2264,20 @@
   function triggerWeapon(faction,weapon,amount){
     if(eliminated[faction])return;
     const totalFirepower=Math.max(0,Math.floor(amount));
+    if(totalFirepower<=0)return;
     const totalVisualPower=firepowerToVisualPower(totalFirepower);
     if(weapon==='shield'){
       shieldValue[faction]+=totalFirepower;
       shieldFlash[faction]=1;
+      shieldGainFlash[faction]=1;
       log(`${FACTIONS[faction].name}结算护盾火力 ${formatNum(totalFirepower)}，等额叠加后为 ${formatNum(shieldValue[faction])}`,faction);
       return;
     }
-    if(totalFirepower<=0)return;
-
     const angle=cannonAngle[faction];
 
     if(weapon==='machine'){
       machineFirepowerPool[faction]+=totalFirepower;
+      machineGainFlash[faction]=1;
       const bulletRatio=getMachineBulletPowerRatio(machineFirepowerPool[faction]);
       log(`${FACTIONS[faction].name}获得机枪火力 ${formatMachineFirepower(totalFirepower)}，当前剩余机枪火力为 ${formatMachineFirepower(machineFirepowerPool[faction])}；每发消耗 1 火力，当前每发携带 ${(bulletRatio*100).toFixed(1)}% 火力`,faction);
       return;
@@ -2790,7 +2811,7 @@
 
   function eliminateFaction(faction,attacker,x,y){
     if(eliminated[faction])return;
-    eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;
+    eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;shieldGainFlash[faction]=0;machineGainFlash[faction]=0;
     machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
     for(let i=balls.length-1;i>=0;i--)if(balls[i].faction===faction)balls.splice(i,1);
@@ -2938,34 +2959,69 @@
     return gain;
   }
 
+  function getOrbSurfaceContact(orb,other,hit){
+    const distanceToA=(orb.x-hit.ax)*(orb.x-hit.ax)+(orb.y-hit.ay)*(orb.y-hit.ay);
+    const distanceToB=(orb.x-hit.bx)*(orb.x-hit.bx)+(orb.y-hit.by)*(orb.y-hit.by);
+    const orbX=distanceToA<=distanceToB?hit.ax:hit.bx,orbY=distanceToA<=distanceToB?hit.ay:hit.by;
+    const otherX=distanceToA<=distanceToB?hit.bx:hit.ax,otherY=distanceToA<=distanceToB?hit.by:hit.ay;
+    let nx=otherX-orbX,ny=otherY-orbY,len=Math.hypot(nx,ny);
+    if(len<1e-6){nx=other.x-orb.x;ny=other.y-orb.y;len=Math.hypot(nx,ny);}
+    if(len<1e-6){nx=-other.vx;ny=-other.vy;len=Math.hypot(nx,ny)||1;}
+    nx/=len;ny/=len;
+    return {x:orbX+nx*orb.r,y:orbY+ny*orb.r,angle:Math.atan2(ny,nx),nx,ny};
+  }
+
+  function spawnOrbEnemyMachineImpact(orb,machine,hit,consumed){
+    const contact=getOrbSurfaceContact(orb,machine,hit);
+    const sourceColor=FACTIONS[machine.faction].color,orbColor=FACTIONS[orb.faction].color;
+    const strength=Math.max(1,Math.log2(consumed+1));
+    addEffect({
+      type:'orbEnemyHit',
+      x:contact.x,y:contact.y,edgeX:contact.x,edgeY:contact.y,
+      targetOrb:orb,targetId:orb.id,targetRadius:orb.r,angle:contact.angle,
+      color:orbColor,sourceColor,
+      r:0,max:8+Math.min(18,strength*.82),
+      life:.92,decay:1.9
+    });
+    const tangentX=-contact.ny,tangentY=contact.nx;
+    for(let i=-1;i<=1;i+=2){
+      const speed=38+Math.min(70,strength*2.4);
+      addEffect({
+        type:'annihilationSpark',x:contact.x,y:contact.y,
+        vx:(contact.nx*.72+tangentX*i*.42)*speed,vy:(contact.ny*.72+tangentY*i*.42)*speed,
+        dirX:contact.nx*.72+tangentX*i*.42,dirY:contact.ny*.72+tangentY*i*.42,
+        size:.72,color:i<0?sourceColor:orbColor,life:.34,decay:3.2,drag:8.4
+      });
+    }
+  }
+
   function absorbFriendlyMachineIntoOrb(orb,machine,hit){
     const absorbed=Math.max(0,Math.floor(machine.firepower));
     if(absorbed<=0)return 0;
 
     const orbBefore=Math.max(1,Math.floor(orb.firepower));
-    const machineSpeed=Math.hypot(machine.vx,machine.vy)||1;
-    const dirX=machine.vx/machineSpeed,dirY=machine.vy/machineSpeed;
-    const trailLength=Math.min(132,52+Math.log2(absorbed+1)*3.2);
-    const sourceHeadX=Number.isFinite(machine.prevX)?machine.prevX:machine.x;
-    const sourceHeadY=Number.isFinite(machine.prevY)?machine.prevY:machine.y;
-    const absorbAngle=Math.atan2(hit.y-orb.y,hit.x-orb.x);
+    const contact=getOrbSurfaceContact(orb,machine,hit);
+    const cross=contact.nx*machine.vy-contact.ny*machine.vx;
+    const absorbAngle=contact.angle;
     orb.absorbFlashAt=simulationElapsed;
     orb.absorbAngle=absorbAngle;
     orb.absorbStrength=Math.min(1,.38+Math.log10(absorbed+1)*.075);
     addEffect({
       type:'orbAbsorb',
-      sourceX:sourceHeadX-dirX*trailLength,
-      sourceY:sourceHeadY-dirY*trailLength,
-      hitX:hit.x,
-      hitY:hit.y,
+      entryX:contact.x,
+      entryY:contact.y,
+      entryAngle:contact.angle,
+      entryRadius:orb.r,
+      orbitSign:cross>=0?1:-1,
+      bulletRadius:machine.r,
+      visualSeed:machine.visualSeed||machine.id,
       targetOrb:orb,
       targetId:orb.id,
       targetRadius:orb.r,
-      curve:((machine.id&1)?1:-1)*(18+Math.min(44,orb.r*.35)),
       color:FACTIONS[orb.faction].color,
       lightColor:mixHexColors(FACTIONS[orb.faction].color,'#ffffff',.72),
       life:1,
-      decay:1.65
+      decay:1.18
     });
     // 先按吸收前的大球数值计算动量，随后再把子弹数值并入大球。
     inheritBulletMomentumIntoOrb(orb,machine,absorbed);
@@ -3018,11 +3074,14 @@
       const consumed=Math.min(Math.floor(p.firepower),Math.floor(q.firepower));
       if(consumed<=0)return false;
       // 敌方普通子弹撞击大球时，大球沿子弹来向继承微小动量。
-      if(pKind===PROJECTILE_COLLISION_KIND.ORB)inheritBulletMomentumIntoOrb(p,q,consumed);
-      else if(qKind===PROJECTILE_COLLISION_KIND.ORB)inheritBulletMomentumIntoOrb(q,p,consumed);
+      const orb=pKind===PROJECTILE_COLLISION_KIND.ORB?p:q;
+      const other=orb===p?q:p;
+      const contact=getOrbSurfaceContact(orb,other,hit);
+      inheritBulletMomentumIntoOrb(orb,other,consumed);
       syncProjectileFirepower(p,p.firepower-consumed);
       syncProjectileFirepower(q,q.firepower-consumed);
-      spawnAnnihilationEffects(hit.x,hit.y,p,q,consumed);
+      if(other.kind==='machine')spawnOrbEnemyMachineImpact(orb,other,hit,consumed);
+      else spawnAnnihilationEffects(contact.x,contact.y,p,q,consumed);
     }
     if(q.firepower<=0){syncProjectileFirepower(q,0);q.dead=true;q.x=hit.x;q.y=hit.y;}
     if(p.firepower<=0){syncProjectileFirepower(p,0);p.dead=true;p.x=hit.x;p.y=hit.y;}
@@ -3144,7 +3203,10 @@
       if(item.time<=0){if(!eliminated[item.data.faction])spawnProjectile(item.data);const last=fireQueue.pop();if(i<fireQueue.length)fireQueue[i]=last;}
     }
     for(let f=0;f<4;f++){
-      shieldFlash[f]=Math.max(0,shieldFlash[f]-dt*1.8);eliminationFlash[f]=Math.max(0,eliminationFlash[f]-dt*.85);
+      shieldFlash[f]=Math.max(0,shieldFlash[f]-dt*1.8);
+      shieldGainFlash[f]=Math.max(0,shieldGainFlash[f]-dt*1.45);
+      machineGainFlash[f]=Math.max(0,machineGainFlash[f]-dt*1.45);
+      eliminationFlash[f]=Math.max(0,eliminationFlash[f]-dt*.85);
       shieldRecoilX[f]+=shieldRecoilVX[f]*dt;shieldRecoilY[f]+=shieldRecoilVY[f]*dt;
       const velocityDamping=Math.exp(-dt*11),positionDamping=Math.exp(-dt*14);
       shieldRecoilVX[f]*=velocityDamping;shieldRecoilVY[f]*=velocityDamping;
@@ -3218,7 +3280,7 @@
         }else if(fxFlags&FX_FLAG_EXPANDING){
           const initial=p.initialLife||1,progress=Math.max(0,Math.min(1,1-p.life/initial));
           p.r=p.max*(1-Math.pow(1-progress,3));
-        }else p.r+=(p.max-p.r)*effectDt*7;
+        }else if(Number.isFinite(p.r)&&Number.isFinite(p.max))p.r+=(p.max-p.r)*effectDt*7;
         if(p.life<=0){const last=pulses.pop();if(i<pulses.length)pulses[i]=last;}
       }
     }
@@ -3277,7 +3339,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v143-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v144-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -3652,6 +3714,50 @@
     lctx.restore();
   }
 
+  function drawBaseValueIcon(ctx,type,x,y,color,flash=0){
+    ctx.save();
+    if(flash>0){
+      const glow=ctx.createRadialGradient(x,y,0,x,y,16);
+      glow.addColorStop(0,colorWithAlpha('#ffffff',.34*flash));
+      glow.addColorStop(.42,colorWithAlpha(color,.22*flash));
+      glow.addColorStop(1,colorWithAlpha(color,0));
+      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,16,0,TAU);ctx.fill();
+    }
+    ctx.strokeStyle=flash>0?mixHexColors(color,'#ffffff',.78):mixHexColors(color,'#dff8ff',.46);
+    ctx.fillStyle=colorWithAlpha(color,.12+.12*flash);
+    ctx.lineWidth=1.25+flash*.7;ctx.lineJoin='round';ctx.shadowColor=color;ctx.shadowBlur=3+flash*7;
+    if(type==='shield'){
+      ctx.beginPath();
+      for(let i=0;i<6;i++){
+        const angle=-Math.PI/2+i*TAU/6,px=x+Math.cos(angle)*7,py=y+Math.sin(angle)*7;
+        if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+      }
+      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.globalAlpha=.72;ctx.beginPath();ctx.moveTo(x,y-4);ctx.lineTo(x,y+4);ctx.stroke();
+    }else{
+      roundedRectPath(ctx,x-7,y-7,14,14,2);ctx.fill();ctx.stroke();
+      ctx.globalAlpha=.88;ctx.lineWidth=1;
+      for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(x+i*3.2,y-4.6);ctx.lineTo(x+i*3.2,y+4.6);ctx.stroke();}
+    }
+    ctx.restore();
+  }
+
+  function drawBaseValueRow(ctx,type,value,y,color,flash,fontSize){
+    if(flash>0){
+      ctx.save();ctx.globalAlpha=.08+.16*flash;ctx.fillStyle=color;roundedRectPath(ctx,30,y-11,126,22,6);ctx.fill();ctx.restore();
+    }
+    drawBaseValueIcon(ctx,type,44,y,color,flash);
+    const fill=flash>0?mixHexColors(color,'#ffffff',.72+.22*flash):'#edfaff';
+    drawText(ctx,value,102,y,{
+      fillStyle:fill,
+      font:`800 ${fontSize+flash*2.2}px monospace`,
+      align:'center',
+      baseline:'middle',
+      shadowColor:flash>0?color:'rgba(13,64,92,.56)',
+      shadowBlur:flash>0?4+flash*8:2
+    });
+  }
+
 
   function updateBaseTextCaches(){
     updatePercentageCache();
@@ -3663,9 +3769,8 @@
         drawText(ctx,'CORE DESTROYED',90,39,{fillStyle:'rgba(255,210,216,.72)',font:'8px monospace',align:'center',baseline:'middle'});
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:'rgba(160,170,184,.72)',font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }else{
-        drawText(ctx,formatNum(shieldValue[f]),90,15,{fillStyle:'#f2fdff',font:'800 18px monospace',align:'center',baseline:'middle'});
-        drawText(ctx,'SHIELD',90,33,{fillStyle:'rgba(173,215,230,.62)',font:'8px monospace',align:'center',baseline:'middle'});
-        drawText(ctx,formatMachineFirepower(machineFirepowerPool[f]),90,50,{fillStyle:'#e9faff',font:'700 12px monospace',align:'center',baseline:'middle'});
+        drawBaseValueRow(ctx,'shield',formatNum(shieldValue[f]),14,col,shieldGainFlash[f],16);
+        drawBaseValueRow(ctx,'machine',formatMachineFirepower(machineFirepowerPool[f]),42,col,machineGainFlash[f],12);
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:col,font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }
     }
@@ -3933,6 +4038,30 @@
         wctx.fillStyle='#ffffff';wctx.globalAlpha=.82*coreFade;wctx.beginPath();wctx.arc(p.x,p.y,coreR,0,TAU);wctx.fill();
         const tick=2.8+3.2*life;wctx.strokeStyle=p.sourceColor;wctx.globalAlpha=.52*coreFade;wctx.lineWidth=.8;
         wctx.beginPath();wctx.moveTo(p.x-tick,p.y);wctx.lineTo(p.x+tick,p.y);wctx.moveTo(p.x,p.y-tick);wctx.lineTo(p.x,p.y+tick);wctx.stroke();
+      }else if(p.type==='orbEnemyHit'){
+        const orb=p.targetOrb,targetAlive=orb&&orb.id===p.targetId&&orb.kind==='orb'&&!orb.dead;
+        const cx=targetAlive?orb.x:p.edgeX,cy=targetAlive?orb.y:p.edgeY;
+        const radius=targetAlive?orb.r:(p.targetRadius||8),angle=p.angle||0;
+        const impactX=targetAlive?cx+Math.cos(angle)*radius:p.edgeX;
+        const impactY=targetAlive?cy+Math.sin(angle)*radius:p.edgeY;
+        const arcWidth=.07+.18*progress;
+        // 两道贴合大球真实边缘的切向弧，明确表达敌弹在球壳上的接触点。
+        wctx.strokeStyle=p.sourceColor;wctx.globalAlpha=.42*life;wctx.lineWidth=6.2+2.8*life;
+        wctx.beginPath();wctx.arc(cx,cy,radius*1.012,angle-arcWidth,angle+arcWidth);wctx.stroke();
+        wctx.strokeStyle='#ffffff';wctx.globalAlpha=.94*Math.max(coreFade,life*.42);wctx.lineWidth=1.35+1.8*life;
+        wctx.beginPath();wctx.arc(cx,cy,radius*1.006,angle-arcWidth*.72,angle+arcWidth*.72);wctx.stroke();
+        wctx.strokeStyle=p.color;wctx.globalAlpha=.78*life;wctx.lineWidth=1+1.35*life;
+        wctx.beginPath();wctx.arc(cx,cy,radius*.965,angle-arcWidth*.92,angle+arcWidth*.92);wctx.stroke();
+        const nx=Math.cos(angle),ny=Math.sin(angle),tangentX=-ny,tangentY=nx;
+        const flare=4+7*life;
+        wctx.strokeStyle=p.sourceColor;wctx.globalAlpha=.88*Math.max(coreFade,life*.48);wctx.lineWidth=1.05;
+        wctx.beginPath();
+        wctx.moveTo(impactX+nx*flare,impactY+ny*flare);wctx.lineTo(impactX-nx*flare*.52,impactY-ny*flare*.52);
+        wctx.moveTo(impactX-tangentX*flare*.45,impactY-tangentY*flare*.45);wctx.lineTo(impactX+tangentX*flare*.45,impactY+tangentY*flare*.45);
+        wctx.stroke();
+        wctx.globalAlpha=.92*Math.max(coreFade,life*.45);wctx.fillStyle='#ffffff';wctx.beginPath();wctx.arc(impactX,impactY,1.4+2.8*Math.max(coreFade,life*.35),0,TAU);wctx.fill();
+        wctx.globalAlpha=.68*life;wctx.strokeStyle=p.sourceColor;wctx.lineWidth=1;
+        wctx.beginPath();wctx.arc(impactX,impactY,Math.max(1,p.r),0,TAU);wctx.stroke();
       }else if(p.type==='annihilation'){
         // 两个阵营颜色组成紧凑的断裂环，外层仅保留极低透明度轮廓。
         wctx.lineWidth=3.2+2.1*life;wctx.globalAlpha=.08*life;
@@ -3963,44 +4092,58 @@
       const progress=1-life;
       const orb=effect.targetOrb;
       const targetAlive=orb&&orb.id===effect.targetId&&orb.kind==='orb'&&!orb.dead;
-      const tx=targetAlive?orb.x:effect.hitX,ty=targetAlive?orb.y:effect.hitY;
+      const tx=targetAlive?orb.x:effect.entryX,ty=targetAlive?orb.y:effect.entryY;
       const targetR=targetAlive?orb.r:(effect.targetRadius||8);
-      const sx=effect.sourceX,sy=effect.sourceY;
-      const dx=tx-sx,dy=ty-sy,len=Math.hypot(dx,dy)||1;
-      const mx=(sx+tx)*.5-dy/len*effect.curve,my=(sy+ty)*.5+dx/len*effect.curve;
-      const head=Math.min(1,1-Math.pow(1-Math.min(1,progress*1.55),3));
-      const tail=Math.max(0,head-(.25+.13*life));
-      const traceSegment=()=>{
+      const entryRadius=Math.max(2,targetR*.98);
+      const entryAngle=effect.entryAngle||0,orbitSign=effect.orbitSign||1;
+      const head=Math.min(1,progress*1.06);
+      const tail=Math.max(0,head-(.16+.07*(1-head)));
+      const samplePosition=u=>{
+        // 径向速度在接近中心时显著增加，角速度也随 u² 加快，形成天体捕获式螺旋坠落。
+        const radius=entryRadius*Math.sqrt(Math.max(0,1-u));
+        const angle=entryAngle+orbitSign*TAU*(.64*u+1.38*u*u);
+        return {x:tx+Math.cos(angle)*radius,y:ty+Math.sin(angle)*radius};
+      };
+      const traceSegment=(offset=0)=>{
         wctx.beginPath();
-        for(let i=0;i<=9;i++){
-          const u=tail+(head-tail)*(i/9),inv=1-u;
-          const x=inv*inv*sx+2*inv*u*mx+u*u*tx;
-          const y=inv*inv*sy+2*inv*u*my+u*u*ty;
-          if(i===0)wctx.moveTo(x,y);else wctx.lineTo(x,y);
+        for(let i=0;i<=12;i++){
+          const u=Math.max(0,Math.min(1,tail+(head-tail)*(i/12)-offset));
+          const point=samplePosition(u);
+          if(i===0)wctx.moveTo(point.x,point.y);else wctx.lineTo(point.x,point.y);
         }
       };
-      traceSegment();wctx.strokeStyle=effect.color;wctx.globalAlpha=.22*life;wctx.lineWidth=8;wctx.stroke();
-      traceSegment();wctx.strokeStyle=effect.lightColor;wctx.globalAlpha=.92*Math.sin(Math.PI*Math.min(1,progress*1.08));wctx.lineWidth=1.75;wctx.stroke();
-      for(let i=0;i<4;i++){
-        const u=tail+(head-tail)*((i+1)/5),inv=1-u;
-        const px=inv*inv*sx+2*inv*u*mx+u*u*tx;
-        const py=inv*inv*sy+2*inv*u*my+u*u*ty;
-        wctx.globalAlpha=(.34+i*.12)*life;wctx.fillStyle=i===3?'#ffffff':effect.lightColor;
-        wctx.beginPath();wctx.arc(px,py,1.05+i*.24,0,TAU);wctx.fill();
+      const traceCapturePath=()=>{
+        wctx.beginPath();
+        for(let i=0;i<=24;i++){
+          const point=samplePosition(head*(i/24));
+          if(i===0)wctx.moveTo(point.x,point.y);else wctx.lineTo(point.x,point.y);
+        }
+      };
+      traceCapturePath();wctx.strokeStyle=effect.color;wctx.globalAlpha=.16+.16*life;wctx.lineWidth=4.4;wctx.stroke();
+      traceCapturePath();wctx.strokeStyle=effect.lightColor;wctx.globalAlpha=.22+.22*life;wctx.lineWidth=.72;wctx.stroke();
+      traceSegment(.018);wctx.strokeStyle=effect.color;wctx.globalAlpha=.18+.16*life;wctx.lineWidth=7.5;wctx.stroke();
+      traceSegment();wctx.strokeStyle=effect.lightColor;wctx.globalAlpha=.46+.42*Math.sin(Math.PI*Math.min(1,progress*1.1));wctx.lineWidth=1.35;wctx.stroke();
+      for(let i=0;i<5;i++){
+        const u=tail+(head-tail)*((i+1)/6),point=samplePosition(u);
+        wctx.globalAlpha=(.16+i*.12)*life;wctx.fillStyle=i===4?'#ffffff':effect.lightColor;
+        wctx.beginPath();wctx.arc(point.x,point.y,.72+i*.16,0,TAU);wctx.fill();
       }
-      const inv=1-head;
-      const hx=inv*inv*sx+2*inv*head*mx+head*head*tx;
-      const hy=inv*inv*sy+2*inv*head*my+head*head*ty;
-      const headGlow=wctx.createRadialGradient(hx,hy,0,hx,hy,7+targetR*.035);
+      const headPoint=samplePosition(head),hx=headPoint.x,hy=headPoint.y;
+      const headGlowRadius=5.5+Math.min(5,targetR*.025);
+      const headGlow=wctx.createRadialGradient(hx,hy,0,hx,hy,headGlowRadius);
       headGlow.addColorStop(0,'rgba(255,255,255,.96)');
       headGlow.addColorStop(.32,colorWithAlpha(effect.lightColor,.78));
       headGlow.addColorStop(1,colorWithAlpha(effect.color,0));
-      wctx.globalAlpha=Math.min(1,life*1.8);wctx.fillStyle=headGlow;wctx.beginPath();wctx.arc(hx,hy,7+targetR*.035,0,TAU);wctx.fill();
-      if(progress>.48){
-        const collapse=Math.min(1,(progress-.48)/.52);
-        const ringR=targetR*(1.26-collapse*.78);
-        wctx.globalAlpha=(1-collapse)*.76;wctx.strokeStyle=effect.lightColor;wctx.lineWidth=1.5+life*1.8;
-        wctx.beginPath();wctx.arc(tx,ty,Math.max(3,ringR),0,TAU);wctx.stroke();
+      wctx.globalAlpha=Math.min(1,.52+life*.6);wctx.fillStyle=headGlow;wctx.beginPath();wctx.arc(hx,hy,headGlowRadius,0,TAU);wctx.fill();
+      const bulletCore=Math.max(.75,Math.min(2.2,(effect.bulletRadius||3)*.22));
+      wctx.globalAlpha=.96;wctx.fillStyle='#ffffff';wctx.beginPath();wctx.arc(hx,hy,bulletCore,0,TAU);wctx.fill();
+      if(head>.72){
+        const collapse=Math.min(1,(head-.72)/.28);
+        const ringR=targetR*(.48-collapse*.39);
+        wctx.globalAlpha=(1-collapse)*.66;wctx.strokeStyle=effect.lightColor;wctx.lineWidth=1.15+life*1.25;
+        wctx.beginPath();wctx.arc(tx,ty,Math.max(2.5,ringR),0,TAU);wctx.stroke();
+        wctx.globalAlpha=.7*Math.sin(Math.PI*collapse);wctx.fillStyle='#ffffff';
+        wctx.beginPath();wctx.arc(tx,ty,1.4+3.2*Math.sin(Math.PI*collapse),0,TAU);wctx.fill();
       }
     }
     wctx.restore();
@@ -4090,8 +4233,6 @@
       if(hasMachineSpark){wctx.globalAlpha=.88;wctx.fillStyle=palette.machineSpark;wctx.fill();}
     }
     wctx.restore();
-
-    drawOrbAbsorptionTrails();
 
     // v137：参考能量核心视觉，使用阵营色构建高亮核心、双层能量环、旋转弧段和轨道粒子。
     wctx.save();
@@ -4183,6 +4324,9 @@
     for(const p of renderOrbProjectiles)drawOrbProjectile(p);
     wctx.restore();
 
+    // v144：捕获后的机枪弹在大球壳体之上绘制，才能清晰看到其螺旋坠入中心。
+    drawOrbAbsorptionTrails();
+
     wctx.save();wctx.globalCompositeOperation='lighter';
     let hasCore=false;wctx.beginPath();
     for(const p of renderOtherProjectiles){
@@ -4218,7 +4362,7 @@
       const bx=FACTIONS[f].base[0]*WV.w,by=FACTIONS[f].base[1]*WV.h,col=FACTIONS[f].color,physicalRadius=shieldRadiusPx(shieldValue[f]);
       const baseShieldVisual=getBaseShieldVisualStyle(f);
       if(!eliminated[f]&&shieldValue[f]>0){
-        drawShieldWithBaseOuterStyle(wctx,bx,by,physicalRadius,baseShieldVisual.color,shieldFlash[f],baseShieldVisual.brightness);
+        drawShieldWithBaseOuterStyle(wctx,bx,by,physicalRadius,baseShieldVisual.color,shieldFlash[f],baseShieldVisual.brightness,t*SHIELD_CLOCKWISE_ROTATION_SPEED);
       }
       wctx.save();wctx.globalAlpha=eliminated[f]?.28:1;wctx.drawImage(baseHudSprites[f],bx-88,by-88);wctx.restore();
       const angle=cannonAngle[f],muzzle=getCannonMuzzle(f,angle);
@@ -4300,7 +4444,7 @@
     balls.length=beams.length=pulses.length=fireQueue.length=0;
     for(let i=0;i<4;i++){
       STOCK_KEYS.forEach(key=>stocks[i][key]=0);
-      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;
+      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;
       shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;
       powerHistory[i].length=0;powerHistory[i].push({t:0,v:1});
     }
@@ -4341,7 +4485,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log(`Demo v143 已启动：每满 3 分钟单格占领所需火力增加 1；大球数值标签随球体直径同步放大并自动限制在球体内。`);
+  log('Demo v144 已启动：大球与大球、护盾的反弹动量衰减归零；护盾内部亮度由中心 20 向边缘 180 非线性增长并顺时针旋转；基地护盾/机枪 HUD、友军子弹吸收和敌弹边缘命中特效已重做。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
