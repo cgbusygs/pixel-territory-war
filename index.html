@@ -193,6 +193,7 @@
     .feed::before{content:"COMBAT LOG";position:sticky;top:0;display:block;padding-bottom:5px;margin-bottom:4px;color:#20dfff;font-size:9px;letter-spacing:.16em;background:rgba(2,8,17,.94)}
     .feed div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
     .badge{padding:3px 7px;border:1px solid rgba(55,101,143,.7);border-radius:1px;font:10px/1.2 monospace;color:#9ab8cf;background:rgba(5,16,31,.62);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px))}
+    .badge.warning{color:#ffd6a1;border-color:rgba(255,152,76,.82);box-shadow:0 0 8px rgba(255,132,50,.18)}
     .data-strip{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;margin:10px 0 12px;position:relative;z-index:6}
     .data-strip-group{min-width:0;border:1px solid rgba(47,131,226,.40);background:linear-gradient(180deg,rgba(7,18,38,.92),rgba(3,9,20,.96));padding:8px;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));box-shadow:0 0 16px rgba(24,93,194,.10),inset 0 0 20px rgba(27,111,206,.06)}
     .data-strip-title{font:700 10px/1 monospace;letter-spacing:.12em;color:#7fa8c5;margin-bottom:7px}
@@ -424,7 +425,7 @@
       </div>
     </div>
     <div class="toolbar">
-      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="roundText">运行 00:00 · 无上限</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8 · 保底 0/3</span>
+      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="overloadBadge">模拟正常</span><span class="badge" id="roundText">运行 00:00 · 无上限</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8 · 保底 0/3</span>
       <label for="speedRange">模拟速度</label>
       <input id="speedRange" class="speed" type="range" min="0.25" max="10" step="0.25" value="1" />
       <span class="badge" id="speedText">1.00×</span>
@@ -646,6 +647,7 @@
   const lctx=get2DContext(leftCanvas,{alpha:false,desynchronized:true});
   const wctx=get2DContext(warCanvas,{alpha:false,desynchronized:true});
   const pctx=get2DContext(powerChartCanvas,{alpha:true,desynchronized:true});
+  const powerChartMetrics={width:0,height:0,dpr:0,dirty:true};
   // 高频 DOM 节点只查询一次；空节点仍安全保留为 null。
   const UI={
     bootNotice:document.getElementById('bootNotice'),
@@ -655,6 +657,7 @@
     perfText:document.getElementById('perfText'),
     mechanicsText:document.getElementById('mechanicsText'),
     profileBadge:document.getElementById('profileBadge'),
+    overloadBadge:document.getElementById('overloadBadge'),
     pauseBtn:document.getElementById('pauseBtn'),
     resetBtn:document.getElementById('resetBtn'),
     launchBtn:document.getElementById('launchBtn'),
@@ -768,6 +771,9 @@
   const fadingTerritoryCells=[];
   const flashingTerritoryCells=[];
   const territoryRefreshStamp=new Uint32Array(GRID_W*GRID_H);
+  // 同一条弹道会在多个采样点覆盖相同网格；用路径戳避免重复查询和重复占领预算计算。
+  const territoryPathStamp=new Uint32Array(GRID_W*GRID_H);
+  let territoryPathStampId=1;
   const territoryCounts=new Uint32Array(4);
   let territoryRefreshStepId=0;
 
@@ -1025,6 +1031,11 @@
   const leftStaticCanvas=document.createElement('canvas');
   leftStaticCanvas.width=LV.w;leftStaticCanvas.height=LV.h;
   const leftStaticCtx=leftStaticCanvas.getContext('2d',{alpha:false});
+  let leftStaticCacheDirty=false;
+  const leftSemiStaticCanvas=document.createElement('canvas');
+  leftSemiStaticCanvas.width=LV.w;leftSemiStaticCanvas.height=LV.h;
+  const leftSemiStaticCtx=leftSemiStaticCanvas.getContext('2d',{alpha:true});
+  let leftSemiStaticCacheDirty=false;
   // 静态战场背景与炮台 HUD 精灵只构建一次。
   const battleStaticCanvas=document.createElement('canvas');
   battleStaticCanvas.width=WV.w;battleStaticCanvas.height=WV.h;
@@ -1189,24 +1200,44 @@
 
   function fitCanvas(canvas,w,h){
     const dpr=Math.min(MAX_CANVAS_DPR,window.devicePixelRatio||1),r=canvas.getBoundingClientRect();
-    canvas.width=Math.max(1,Math.round(r.width*dpr));
-    canvas.height=Math.max(1,Math.round(r.height*dpr));
-    return {sx:canvas.width/w,sy:canvas.height/h,ox:0,oy:0};
+    const width=Math.max(1,Math.round(r.width*dpr)),height=Math.max(1,Math.round(r.height*dpr));
+    const changed=canvas.width!==width||canvas.height!==height;
+    if(changed){canvas.width=width;canvas.height=height;}
+    return {sx:width/w,sy:height/h,ox:0,oy:0,changed};
   }
   function fitCanvasContained(canvas,w,h){
     const dpr=Math.min(MAX_CANVAS_DPR,window.devicePixelRatio||1),r=canvas.getBoundingClientRect();
-    canvas.width=Math.max(1,Math.round(r.width*dpr));
-    canvas.height=Math.max(1,Math.round(r.height*dpr));
-    const scale=Math.min(canvas.width/w,canvas.height/h);
-    return {sx:scale,sy:scale,ox:(canvas.width-w*scale)*.5,oy:(canvas.height-h*scale)*.5};
+    const width=Math.max(1,Math.round(r.width*dpr)),height=Math.max(1,Math.round(r.height*dpr));
+    const changed=canvas.width!==width||canvas.height!==height;
+    if(changed){canvas.width=width;canvas.height=height;}
+    const scale=Math.min(width/w,height/h);
+    return {sx:scale,sy:scale,ox:(width-w*scale)*.5,oy:(height-h*scale)*.5,changed};
   }
-  function resize(){lscale=fitCanvasContained(leftCanvas,LV.w,LV.h);wscale=fitCanvas(warCanvas,WV.w,WV.h);drawPowerChart();}
+  let leftRenderAccumulatorMs=0;
+  let resizeRaf=0;
+  function resizeNow(){
+    const nextLeft=fitCanvasContained(leftCanvas,LV.w,LV.h),nextWar=fitCanvas(warCanvas,WV.w,WV.h);
+    lscale=nextLeft;wscale=nextWar;
+    if(nextLeft.changed||nextWar.changed){
+      leftStaticCacheDirty=true;
+      leftSemiStaticCacheDirty=true;
+      leftRenderAccumulatorMs=0;
+      powerChartMetrics.dirty=true;
+      drawPowerChart();
+    }
+  }
+  function resize(immediate=false){
+    if(immediate){if(resizeRaf){cancelAnimationFrame(resizeRaf);resizeRaf=0;}resizeNow();return;}
+    if(resizeRaf)return;
+    resizeRaf=requestAnimationFrame(()=>{resizeRaf=0;resizeNow();});
+  }
   const layoutNode=document.querySelector('.layout');
   buildBoard();
   if('ResizeObserver' in window){new ResizeObserver(resize).observe(layoutNode);}else{window.addEventListener('resize',resize,{passive:true});}
+  if('ResizeObserver' in window){new ResizeObserver(()=>{powerChartMetrics.dirty=true;drawPowerChart();}).observe(powerChartCanvas);}
   window.addEventListener('orientationchange',()=>setTimeout(resize,120),{passive:true});
   if(window.visualViewport)window.visualViewport.addEventListener('resize',resize,{passive:true});
-  resize();
+  resize(true);
 
   function buildLeftStatic(){
     const c=leftStaticCtx;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,LV.w,LV.h);
@@ -1221,6 +1252,35 @@
       c.strokeStyle=y%100===0?'rgba(55,186,244,.24)':'rgba(42,138,204,.085)';
       c.lineWidth=y%100===0?1.1:.7;c.beginPath();c.moveTo(0,y);c.lineTo(LV.w,y);c.stroke();
     }
+  }
+
+  function drawLeftZoneFrame(ctx,x,y,w,h,color){
+    ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.24;ctx.lineWidth=.9;ctx.strokeRect(x,y,w,h);
+    ctx.globalAlpha=.64;ctx.lineWidth=1.5;
+    const c=10;
+    [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]].forEach(([cx,cy,sx,sy])=>{
+      ctx.beginPath();ctx.moveTo(cx,cy+sy*c);ctx.lineTo(cx,cy);ctx.lineTo(cx+sx*c,cy);ctx.stroke();
+    });ctx.restore();
+  }
+
+  function buildLeftSemiStatic(){
+    const ctx=leftSemiStaticCtx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,LV.w,LV.h);
+    drawZoneRailLabel('01','生成',MATRIX_TOP_WALL_Y,BOARD.upperTop-12,'#24e2ff',ctx);
+    drawZoneRailLabel('02','上层',BOARD.upperTop,BOARD.upperBottom,'#4ea8ff',ctx);
+    drawZoneRailLabel('03','倍率',BOARD.multTop,BOARD.multBottom,'#bd4fff',ctx);
+    drawZoneRailLabel('04','下层',BOARD.lowerTop,BOARD.lowerBottom,'#5e83ff',ctx);
+    drawZoneRailLabel('05','转换',BOARD.convertTop,BOARD.convertBottom,'#27e5ff',ctx);
+    ctx.save();ctx.setLineDash([8,7]);ctx.strokeStyle='rgba(33,228,255,.75)';ctx.lineWidth=1.4;ctx.shadowColor='#20dfff';ctx.shadowBlur=10;
+    ctx.beginPath();ctx.moveTo(PLAYFIELD.left,BOARD.spawnY);ctx.lineTo(PLAYFIELD.right,BOARD.spawnY);ctx.stroke();ctx.restore();
+    drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.upperTop-10,PLAYFIELD.width,BOARD.upperBottom-BOARD.upperTop+26,'#318cf6');
+    drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.lowerTop-10,PLAYFIELD.width,BOARD.lowerBottom-BOARD.lowerTop+24,'#625bff');
+    ctx.save();
+    const wallTop=MATRIX_TOP_WALL_Y,wallBottom=MATRIX_BOTTOM_WALL_Y;
+    const wallGrad=ctx.createLinearGradient(0,wallTop,0,wallBottom);
+    wallGrad.addColorStop(0,'rgba(75,239,255,.98)');wallGrad.addColorStop(.5,'rgba(62,150,255,.82)');wallGrad.addColorStop(1,'rgba(55,235,255,.98)');
+    ctx.strokeStyle=wallGrad;ctx.lineWidth=1.8;ctx.shadowColor='#26e7ff';ctx.shadowBlur=10;
+    [[PLAYFIELD.left,wallTop,PLAYFIELD.left,wallBottom],[PLAYFIELD.right,wallTop,PLAYFIELD.right,wallBottom],[PLAYFIELD.left,wallTop,PLAYFIELD.right,wallTop],[PLAYFIELD.left,wallBottom,PLAYFIELD.right,wallBottom]].forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
+    ctx.restore();
   }
 
   function buildBattleStatic(){
@@ -1325,6 +1385,9 @@
 
   function buildRenderCaches(){
     buildLeftStatic();
+    leftStaticCacheDirty=false;
+    buildLeftSemiStatic();
+    leftSemiStaticCacheDirty=false;
     buildBattleStatic();
     coreGlowCtx.clearRect(0,0,300,300);
     const glow=coreGlowCtx.createRadialGradient(150,150,0,150,150,150);
@@ -1388,10 +1451,12 @@
     const color=territoryAgeColorLUT[faction][tick];
     if(territoryPixelWords[cellIndex]===color)return false;
     territoryPixelWords[cellIndex]=color;
+    const x=cellIndex%GRID_W,y=(cellIndex/GRID_W)|0,tileIndex=(y>>5)*TERRITORY_TILE_COLS+(x>>5);
+    if(!dirtyTerritoryTiles[tileIndex]){dirtyTerritoryTiles[tileIndex]=1;dirtyTerritoryTileCount++;}
     return true;
   }
   function updateTerritoryBrightness(){
-    let changed=false;const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
+    const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
     for(let i=fadingTerritoryCells.length-1;i>=0;i--){
       const cellIndex=fadingTerritoryCells[i],faction=owner[cellIndex];
       if(faction===255){
@@ -1400,15 +1465,11 @@
         continue;
       }
       const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
-      if(writeTerritoryAgeColorTick(cellIndex,faction,ageTick))changed=true;
+      writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
       if(ageTick>=TERRITORY_COLOR_TICK_COUNT-1){
         territoryFadeTracked[cellIndex]=0;
         const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
       }
-    }
-    if(changed){
-      territoryCtx.putImageData(territoryImage,0,0);
-      dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
     }
   }
 
@@ -1422,10 +1483,7 @@
         continue;
       }
       const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
-      if(writeTerritoryAgeColorTick(cellIndex,faction,ageTick)){
-        const x=cellIndex%GRID_W,y=(cellIndex/GRID_W)|0,tileIndex=(y>>5)*TERRITORY_TILE_COLS+(x>>5);
-        if(!dirtyTerritoryTiles[tileIndex]){dirtyTerritoryTiles[tileIndex]=1;dirtyTerritoryTileCount++;}
-      }
+      writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
       if(ageTick>=Math.round(TERRITORY_FLASH_DURATION*TERRITORY_COLOR_TICK_HZ)){
         territoryFlashTracked[cellIndex]=0;
         const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
@@ -2428,7 +2486,7 @@
     return {mask,baseX,baseY,qr};
   }
 
-  function applyImpact(gx,gy,r,faction,budget=Infinity,refreshOwned=false){
+  function applyImpact(gx,gy,r,faction,budget=Infinity,refreshOwned=false,pathStampId=0){
     budget=Math.max(0,Math.floor(budget));if(budget<=0)return 0;
     const captureFirepower=getTerritoryCaptureFirepower();
     const captureCapacity=Number.isFinite(budget)?Math.floor(budget/captureFirepower):Infinity;
@@ -2439,6 +2497,10 @@
       const x=baseX+mask[i],y=baseY+mask[i+1];
       if(x<0||x>=GRID_W||y<0||y>=GRID_H)continue;
       const idx=y*GRID_W+x,previous=owner[idx];
+      if(pathStampId){
+        if(territoryPathStamp[idx]===pathStampId)continue;
+        territoryPathStamp[idx]=pathStampId;
+      }
       if(previous===faction){
         if(!refreshOwned)continue;
         refreshTerritoryCell(idx,faction);refreshed=true;
@@ -2499,12 +2561,15 @@
     const initialRadius=projectileTerritoryRadius(p);
     const length=Math.hypot(x2-x1,y2-y1),spacing=Math.max(1.1,Math.min(4.0,initialRadius*.92)),steps=Math.max(1,Math.ceil(length/spacing));
     const refreshOwned=p.kind==='orb'||p.kind==='scatter'||p.kind==='sniper';
+    territoryPathStampId=(territoryPathStampId+1)>>>0;
+    if(territoryPathStampId===0){territoryPathStamp.fill(0);territoryPathStampId=1;}
+    const pathStampId=territoryPathStampId;
     let spentTotal=0,lastX=x1,lastY=y1;
     for(let i=1;i<=steps;i++){
       const t=i/steps,gx=x1+(x2-x1)*t,gy=y1+(y2-y1)*t;
       // 大球每次占领后立刻同步火力与半径，避免用旧尺寸完成整段扫掠。
       const radius=p.kind==='orb'?p.r:initialRadius;
-      const spent=applyImpact(gx,gy,radius,p.faction,remaining,refreshOwned);
+      const spent=applyImpact(gx,gy,radius,p.faction,remaining,refreshOwned,pathStampId);
       remaining-=spent;spentTotal+=spent;lastX=gx;lastY=gy;
       if(p.kind==='orb'&&spent>0)syncProjectileFirepower(p,remaining);
       if(remaining<=0)break;
@@ -3079,6 +3144,16 @@
     if(closing<0)bounceOrbPair(a,b,null);
   }
 
+  // 查询层先过滤绝不会发生作用的同阵营普通弹丸，保留大球-大球与大球-机枪吸收路径。
+  // resolveProjectilePairInteraction 仍保留最终规则判断，避免查询优化改变碰撞结果。
+  function projectilePairMayInteract(p,q){
+    if(q.dead||q.firepower<=0)return false;
+    if(p.faction!==q.faction)return true;
+    const pOrb=p.collisionKind===PROJECTILE_COLLISION_KIND.ORB;
+    const qOrb=q.collisionKind===PROJECTILE_COLLISION_KIND.ORB;
+    return (pOrb&&qOrb)||(pOrb!==qOrb&&(p.collisionKind===PROJECTILE_COLLISION_KIND.MACHINE||q.collisionKind===PROJECTILE_COLLISION_KIND.MACHINE));
+  }
+
   function resolveProjectilePairInteraction(p,q){
     if(q.dead||q.firepower<=0)return false;
     const sameFaction=q.faction===p.faction;
@@ -3147,14 +3222,16 @@
         const ny=cy+oy;if(ny<0||ny>=PROJECTILE_HASH_ROWS)continue;
         for(let ox=-range;ox<=range;ox++){
           const nx=cx+ox;if(nx<0||nx>=PROJECTILE_HASH_COLS)continue;
-          const list=projectileCollisionBuckets[ny*PROJECTILE_HASH_COLS+nx];
-          for(let j=0;j<list.length;j++){
-            if(resolveProjectilePairInteraction(p,list[j]))break outer;
-          }
+            const list=projectileCollisionBuckets[ny*PROJECTILE_HASH_COLS+nx];
+            for(let j=0;j<list.length;j++){
+              if(!projectilePairMayInteract(p,list[j]))continue;
+              if(resolveProjectilePairInteraction(p,list[j]))break outer;
+            }
         }
       }
       if(!p.dead){
         for(let j=0;j<activeOrbCollisionProjectiles.length;j++){
+          if(!projectilePairMayInteract(p,activeOrbCollisionProjectiles[j]))continue;
           if(resolveProjectilePairInteraction(p,activeOrbCollisionProjectiles[j]))break;
         }
       }
@@ -3340,6 +3417,7 @@
     return hudPercentages;
   }
   const statValueEls=[],statBarEls=[];
+  const statDisplayCache=Array(4).fill('');
   function ensureStatsDom(){
     if(statValueEls.length)return true;
     const stats=UI.stats;
@@ -3536,14 +3614,15 @@
     return items.map(item=>`<span class=\"counter-chip\">${item.label} ${formatNum(item.value)}</span>`).join('');
   }
 
+  let lastMultHitMarkup='',lastConverterHitMarkup='';
   function updateTopHitDisplays(){
     if(UI.multHitText){
       const items=multCells.filter(cell=>cell.type!=='gap').map(cell=>({label:cell.hitLabel,value:cell.hitCount||0}));
-      UI.multHitText.innerHTML=renderCounterChips(items);
+      const markup=renderCounterChips(items);if(markup!==lastMultHitMarkup){lastMultHitMarkup=markup;UI.multHitText.innerHTML=markup;}
     }
     if(UI.converterHitText){
       const items=converterCells.map(cell=>({label:cell.hitLabel,value:cell.hitCount||0}));
-      UI.converterHitText.innerHTML=renderCounterChips(items);
+      const markup=renderCounterChips(items);if(markup!==lastConverterHitMarkup){lastConverterHitMarkup=markup;UI.converterHitText.innerHTML=markup;}
     }
   }
 
@@ -3552,10 +3631,21 @@
     for(const cell of converterCells)cell.hitCount=0;
     updateTopHitDisplays();
   }
+  let lastOverloadBadgeText='';
+  function updateSimulationOverloadBadge(){
+    if(!UI.overloadBadge)return;
+    const text=droppedSimulationTime>1e-6?`模拟过载 · 丢弃 ${droppedSimulationTime.toFixed(droppedSimulationTime>=10?0:2)}s`:'模拟正常';
+    if(text===lastOverloadBadgeText)return;
+    lastOverloadBadgeText=text;UI.overloadBadge.textContent=text;UI.overloadBadge.classList.toggle('warning',droppedSimulationTime>1e-6);
+  }
   function updateStats(){
+    if(document.hidden)return;
     const p=updatePercentageCache();
     if(ensureStatsDom()){
-      for(let i=0;i<4;i++){const text=p[i].toFixed(1)+'%';statValueEls[i].textContent=eliminated[i]?'已淘汰':text;statBarEls[i].style.width=eliminated[i]?'0%':text;}
+      for(let i=0;i<4;i++){
+        const text=eliminated[i]?'已淘汰':p[i].toFixed(1)+'%';
+        if(statDisplayCache[i]!==text){statDisplayCache[i]=text;statValueEls[i].textContent=text;statBarEls[i].style.width=eliminated[i]?'0%':text;}
+      }
     }
     UI.factionButtons.forEach(btn=>btn.classList.toggle('eliminated',eliminated[Number(btn.dataset.faction)]));
     const timer=UI.roundText;
@@ -3566,6 +3656,7 @@
     }
     const perf=UI.perfText;if(perf)perf.textContent=`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · FX ${pulses.length} · 球桶 ${activeBallBuckets.length}`;
     if(UI.mechanicsText)UI.mechanicsText.textContent=`倍率 ×2 / ×4 / ×8 · ${FACTIONS[selectedFaction].name}保底 ${multiplierDryStreak[selectedFaction]}/${TUNING.plinko.pityDrySettles}${multiplierPityCharges[selectedFaction]?'（已就绪）':''}`;
+    updateSimulationOverloadBadge();
     updateMatchRecordingControls();
     updateTopHitDisplays();
     syncPowerHistory();
@@ -3627,10 +3718,14 @@
     return ticks;
   }
   function drawPowerChart(){
-    const rect=powerChartCanvas.getBoundingClientRect();
-    const dpr=Math.min(1.5,window.devicePixelRatio||1);
-    const width=Math.max(1,Math.round(rect.width*dpr));
-    const height=Math.max(1,Math.round(rect.height*dpr));
+    if(powerChartMetrics.dirty||powerChartMetrics.width<=0||powerChartMetrics.height<=0){
+      const rect=powerChartCanvas.getBoundingClientRect();
+      powerChartMetrics.dpr=Math.min(1.5,window.devicePixelRatio||1);
+      powerChartMetrics.width=Math.max(1,Math.round(rect.width*powerChartMetrics.dpr));
+      powerChartMetrics.height=Math.max(1,Math.round(rect.height*powerChartMetrics.dpr));
+      powerChartMetrics.dirty=false;
+    }
+    const dpr=powerChartMetrics.dpr,width=powerChartMetrics.width,height=powerChartMetrics.height;
     if(powerChartCanvas.width!==width||powerChartCanvas.height!==height){powerChartCanvas.width=width; powerChartCanvas.height=height;}
     pctx.setTransform(1,0,0,1,0,0); pctx.clearRect(0,0,width,height);
     const m={l:50*dpr,r:14*dpr,t:12*dpr,b:24*dpr};
@@ -3835,25 +3930,27 @@
     }
   }
 
-  function drawZoneRailLabel(code,text,top,bottom,color='#9ad9ff'){
+  function drawZoneRailLabel(code,text,top,bottom,color='#9ad9ff',ctx=lctx){
     const railLeft=6,railRight=PLAYFIELD.left-5;
     const height=Math.max(16,bottom-top);
-    lctx.save();
-    lctx.fillStyle='rgba(4,14,30,.88)';
-    lctx.strokeStyle=color;
-    lctx.globalAlpha=.72;
-    lctx.lineWidth=.9;
-    lctx.fillRect(railLeft,top,railRight-railLeft,height);
-    lctx.beginPath();lctx.moveTo(railRight,top);lctx.lineTo(railRight,bottom);lctx.stroke();
-    lctx.translate((railLeft+railRight)*.5,top+height*.5);
-    lctx.rotate(-Math.PI*.5);
-    lctx.shadowColor=color;lctx.shadowBlur=3;
-    lctx.fillStyle='rgba(207,237,250,.88)';lctx.font='700 8px "Microsoft YaHei",sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';
-    lctx.fillText(`${code} · ${text}`,0,0);
-    lctx.restore();
+    ctx.save();
+    ctx.fillStyle='rgba(4,14,30,.88)';
+    ctx.strokeStyle=color;
+    ctx.globalAlpha=.72;
+    ctx.lineWidth=.9;
+    ctx.fillRect(railLeft,top,railRight-railLeft,height);
+    ctx.beginPath();ctx.moveTo(railRight,top);ctx.lineTo(railRight,bottom);ctx.stroke();
+    ctx.translate((railLeft+railRight)*.5,top+height*.5);
+    ctx.rotate(-Math.PI*.5);
+    ctx.shadowColor=color;ctx.shadowBlur=3;
+    ctx.fillStyle='rgba(207,237,250,.88)';ctx.font='700 8px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(`${code} · ${text}`,0,0);
+    ctx.restore();
   }
   function drawLeft(){
     // v63：先清空整张物理画布，再以统一比例居中绘制，避免圆形被非等比拉伸为椭圆。
+    if(leftStaticCacheDirty){buildLeftStatic();leftStaticCacheDirty=false;}
+    if(leftSemiStaticCacheDirty){buildLeftSemiStatic();leftSemiStaticCacheDirty=false;}
     lctx.setTransform(1,0,0,1,0,0);
     lctx.clearRect(0,0,leftCanvas.width,leftCanvas.height);
     lctx.setTransform(lscale.sx,0,0,lscale.sy,lscale.ox,lscale.oy);
@@ -3861,51 +3958,22 @@
 
     lctx.globalAlpha=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;lctx.lineWidth=1;lctx.lineCap='butt';lctx.lineJoin='miter';lctx.setLineDash([]);
     lctx.drawImage(leftStaticCanvas,0,0);
+    lctx.drawImage(leftSemiStaticCanvas,0,0);
     const sweep=(t*90)%LV.h;
     const scan=lctx.createLinearGradient(0,sweep-35,0,sweep+35);scan.addColorStop(0,'transparent');scan.addColorStop(.5,'rgba(42,223,255,.048)');scan.addColorStop(1,'transparent');
     lctx.fillStyle=scan;lctx.fillRect(0,Math.max(0,sweep-35),LV.w,70);
 
-    // 区域名称进入物理场左侧的独立信息轨道，不再覆盖墙体、弹珠和入口。
-    drawZoneRailLabel('01','生成',MATRIX_TOP_WALL_Y,BOARD.upperTop-12,'#24e2ff');
-    drawZoneRailLabel('02','上层',BOARD.upperTop,BOARD.upperBottom,'#4ea8ff');
-    drawZoneRailLabel('03','倍率',BOARD.multTop,BOARD.multBottom,'#bd4fff');
-    drawZoneRailLabel('04','下层',BOARD.lowerTop,BOARD.lowerBottom,'#5e83ff');
-    drawZoneRailLabel('05','转换',BOARD.convertTop,BOARD.convertBottom,'#27e5ff');
-
-    // 生成轨道。
-    lctx.save();lctx.setLineDash([8,7]);lctx.strokeStyle='rgba(33,228,255,.75)';lctx.lineWidth=1.4;lctx.shadowColor='#20dfff';lctx.shadowBlur=10;
-    lctx.beginPath();lctx.moveTo(PLAYFIELD.left,BOARD.spawnY);lctx.lineTo(PLAYFIELD.right,BOARD.spawnY);lctx.stroke();lctx.restore();
-
-    // 区域框与角标。
-    function zoneFrame(x,y,w,h,color){
-      lctx.save();lctx.strokeStyle=color;lctx.globalAlpha=.24;lctx.lineWidth=.9;lctx.strokeRect(x,y,w,h);
-      lctx.globalAlpha=.64;lctx.lineWidth=1.5;
-      const c=10;
-      [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]].forEach(([cx,cy,sx,sy])=>{
-        lctx.beginPath();lctx.moveTo(cx,cy+sy*c);lctx.lineTo(cx,cy);lctx.lineTo(cx+sx*c,cy);lctx.stroke();
-      });lctx.restore();
-    }
-    zoneFrame(PLAYFIELD.left,BOARD.upperTop-10,PLAYFIELD.width,BOARD.upperBottom-BOARD.upperTop+26,'#318cf6');
-    zoneFrame(PLAYFIELD.left,BOARD.lowerTop-10,PLAYFIELD.width,BOARD.lowerBottom-BOARD.lowerTop+24,'#625bff');
-
-    // 火力生成矩阵四周挡板：左右侧保留反弹壁逻辑，顶部与底部新增实体挡板。
-    lctx.save();
-    const wallTop=MATRIX_TOP_WALL_Y, wallBottom=MATRIX_BOTTOM_WALL_Y;
-    const wallGrad=lctx.createLinearGradient(0,wallTop,0,wallBottom);
-    wallGrad.addColorStop(0,'rgba(75,239,255,.98)');
-    wallGrad.addColorStop(.5,'rgba(62,150,255,.82)');
-    wallGrad.addColorStop(1,'rgba(55,235,255,.98)');
-    lctx.strokeStyle=wallGrad; lctx.lineWidth=1.8; lctx.shadowColor='#26e7ff'; lctx.shadowBlur=10;
-    [[PLAYFIELD.left,wallTop,PLAYFIELD.left,wallBottom],[PLAYFIELD.right,wallTop,PLAYFIELD.right,wallBottom],[PLAYFIELD.left,wallTop,PLAYFIELD.right,wallTop],[PLAYFIELD.left,wallBottom,PLAYFIELD.right,wallBottom]].forEach(([x1,y1,x2,y2])=>{lctx.beginPath(); lctx.moveTo(x1,y1); lctx.lineTo(x2,y2); lctx.stroke();});
-    lctx.restore();
-
     // v118：只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
-    const drawPeg=p=>{
-      lctx.save();lctx.shadowColor='#bdeeff';lctx.shadowBlur=6;lctx.fillStyle='#91a7b6';lctx.strokeStyle='rgba(233,251,255,.76)';lctx.lineWidth=.7;
-      lctx.beginPath();lctx.arc(p.x,p.y,p.r,0,TAU);lctx.fill();lctx.stroke();
-      lctx.shadowBlur=0;lctx.fillStyle='rgba(255,255,255,.72)';lctx.beginPath();lctx.arc(p.x-p.r*.32,p.y-p.r*.35,p.r*.24,0,TAU);lctx.fill();lctx.restore();
-    };
-    upperPegs.forEach(drawPeg); lowerPegs.forEach(drawPeg);
+    // 批量绘制碰撞点，避免每个点重复 save/restore 和路径提交。
+    lctx.save();lctx.shadowColor='#bdeeff';lctx.shadowBlur=6;lctx.fillStyle='#91a7b6';lctx.strokeStyle='rgba(233,251,255,.76)';lctx.lineWidth=.7;
+    lctx.beginPath();
+    for(const p of upperPegs)lctx.moveTo(p.x+p.r,p.y),lctx.arc(p.x,p.y,p.r,0,TAU);
+    for(const p of lowerPegs)lctx.moveTo(p.x+p.r,p.y),lctx.arc(p.x,p.y,p.r,0,TAU);
+    lctx.fill();lctx.stroke();
+    lctx.shadowBlur=0;lctx.fillStyle='rgba(255,255,255,.72)';lctx.beginPath();
+    for(const p of upperPegs)lctx.moveTo(p.x+p.r*.24,p.y-p.r*.35),lctx.arc(p.x-p.r*.32,p.y-p.r*.35,p.r*.24,0,TAU);
+    for(const p of lowerPegs)lctx.moveTo(p.x+p.r*.24,p.y-p.r*.35),lctx.arc(p.x-p.r*.32,p.y-p.r*.35,p.r*.24,0,TAU);
+    lctx.fill();lctx.restore();
 
     for(const cell of multCells){
       if(cell.type==='gap'){
@@ -4466,7 +4534,8 @@
     if(monochromeHoldSeconds>=MONOCHROME_WIN_SECONDS-1e-9)completeMonochromeVictory(fullFaction);
   }
 
-  let renderAccumulatorMs=0,leftRenderAccumulatorMs=0,simAccumulator=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+  let renderAccumulatorMs=0,simAccumulator=0,droppedSimulationTime=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+  window.__perfDebug=()=>({displayFps,projectiles:projectiles.length,droppedSimulationTime,simAccumulator,territoryGpuActive,territoryDirtyTiles:dirtyTerritoryTileCount});
   function simulateStep(dt){
     territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
@@ -4484,7 +4553,11 @@
       // v73：随模拟倍率动态增加每帧可执行步数，确保高倍速不是只改变滑杆数值。
       const maxSimSteps=IS_MOBILE_DEVICE?Math.min(24,Math.max(8,Math.ceil(speed*1.6))):Math.min(48,Math.max(12,Math.ceil(speed*2.5)));
       while(simAccumulator>=SIM_STEP&&steps<maxSimSteps&&!paused){simulateStep(SIM_STEP);simAccumulator-=SIM_STEP;steps++;}
-      if(steps===maxSimSteps&&simAccumulator>SIM_STEP*4)simAccumulator=SIM_STEP*4;
+      if(steps===maxSimSteps&&simAccumulator>SIM_STEP*4){
+        const retained=SIM_STEP*4;
+        droppedSimulationTime+=simAccumulator-retained;
+        simAccumulator=retained;
+      }
     }else simAccumulator=0;
     const renderInterval=1000/PERF_PROFILE.renderHz,leftRenderInterval=1000/PERF_PROFILE.leftRenderHz;
     renderAccumulatorMs+=elapsed*1000;leftRenderAccumulatorMs+=elapsed*1000;
@@ -4511,7 +4584,7 @@
     previousOrbPairContacts.clear();currentOrbPairContacts.clear();
     resetTopHitCounts();
     buildPegRotors();resetTerritory();initializeFixedBallPool();
-    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
+    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;droppedSimulationTime=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
     gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
     if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
     if(UI.feed)UI.feed.innerHTML='';
@@ -4534,7 +4607,7 @@
   if(UI.pauseBtn)UI.pauseBtn.addEventListener('click',e=>{if(gameEnded)return;paused=!paused;e.target.textContent=paused?'继续':'暂停';updateStats();});
   if(UI.recordGameBtn)UI.recordGameBtn.addEventListener('click',startMatchRecording);
   if(UI.stopRecordBtn)UI.stopRecordBtn.addEventListener('click',()=>stopMatchRecording('手动结束'));
-  document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;});
+  document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;if(!document.hidden)updateStats();});
   if(UI.resetBtn)UI.resetBtn.addEventListener('click',()=>{
     if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
     resetGame();
