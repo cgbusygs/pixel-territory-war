@@ -2512,6 +2512,20 @@
     }
   }
 
+  function settleEliminatedFactionResources(faction,pendingMachineFirepower,pendingBallValues){
+    let orbCount=0,totalFirepower=0;
+    const spawnRandomOrb=(firepower)=>{
+      const amount=Math.max(0,Math.floor(firepower));
+      if(amount<=0)return;
+      // 淘汰结算发生在阵营标记前，直接生成已发射的大球，方向完全随机且不经过 fireQueue。
+      spawnProjectile({kind:'orb',faction,angle:Math.random()*TAU,firepower:amount});
+      orbCount++;totalFirepower+=amount;
+    };
+    spawnRandomOrb(pendingMachineFirepower);
+    for(const value of pendingBallValues)spawnRandomOrb(value);
+    return {orbCount,totalFirepower};
+  }
+
   function spawnProjectile(d){
     if(eliminated[d.faction])return;
     let sx,sy,tx,ty,dx,dy;
@@ -3107,12 +3121,18 @@
 
   function eliminateFaction(faction,attacker,x,y){
     if(eliminated[faction])return;
+    const pendingMachineFirepower=Math.max(0,Math.floor(machineFirepowerPool[faction]))+Math.max(0,Math.ceil(machineVisualGroups[faction].damage));
+    const pendingBallValues=[];
+    for(let i=balls.length-1;i>=0;i--){
+      if(balls[i].faction!==faction)continue;
+      pendingBallValues.push(Math.max(0,Math.floor(balls[i].value)));
+      balls.splice(i,1);
+    }
+    const resourceSummary=settleEliminatedFactionResources(faction,pendingMachineFirepower,pendingBallValues);
     eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;shieldGainFlash[faction]=0;machineGainFlash[faction]=0;
     factionStartValueMultiplier*=8;
     machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
-    for(let i=balls.length-1;i>=0;i--)if(balls[i].faction===faction)balls.splice(i,1);
-    for(const projectile of projectiles)if(projectile.faction===faction)projectile.dead=true;
     for(let i=fireQueue.length-1;i>=0;i--)if(fireQueue[i].data.faction===faction)fireQueue.splice(i,1);
     for(let i=sniperAimJobs.length-1;i>=0;i--)if(sniperAimJobs[i].faction===faction)sniperAimJobs.splice(i,1);
     for(let i=beams.length-1;i>=0;i--)if(beams[i].faction===faction)beams.splice(i,1);
@@ -3126,6 +3146,7 @@
     for(let ring=0;ring<4;ring++)addEffect({type:'baseHit',x,y,r:ring*5,max:26+ring*12,color:FACTIONS[faction].color,life:1.15-ring*.12,decay:1.45+ring*.18});
     const attackerName=attacker===null?'未知阵营':FACTIONS[attacker].name;
     log(`${FACTIONS[faction].name}核心被${attackerName}弹丸击中，已被淘汰`,faction);
+    if(resourceSummary.orbCount>0)log(`${FACTIONS[faction].name}淘汰结算：${pendingBallValues.length} 枚生成区弹珠与未结算机枪火力转为 ${resourceSummary.orbCount} 枚随机方向大球（合计 ${formatNum(resourceSummary.totalFirepower)} 火力）`,faction);
     if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}；后续弹珠起始值 ×${factionStartValueMultiplier}`,attacker!==null?attacker:null);
     updateBaseTextCaches();updateStats();
   }
@@ -4974,6 +4995,7 @@
   log('Demo v166 已启动：狙击锁定效果的准星与连线线宽统一调整为原来的 140%。');
   log('Demo v167 已启动：狙击锁定层改为不透明 source-over 合成，并在战场全部元素之后置顶绘制。');
   log('Demo v168 已启动：火力兑现区按 0:1:1.5:1:0 开局，20 分钟线性过渡至并固定为 1:1:1:1:1。');
+  log('Demo v169 已启动：阵营淘汰后保留已发射弹丸；未结算机枪与生成区弹珠转为随机方向大球。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
