@@ -633,8 +633,8 @@
       kickCooldown:.72             // 防止同一弹珠连续触发冲量
     }),
     converter:Object.freeze({
-      // 开局关闭两侧端口；30 分钟内令两侧权重由 0 线性增长至 1，中间三项始终保持权重 1。
-      equalizeSeconds:30*60,
+      // 从左到右为霰弹、机枪、护盾、大球、狙击；20 分钟内按目标权重线性过渡。
+      equalizeSeconds:20*60,
       inset:3
     }),
     orbBulletMomentum:Object.freeze({
@@ -1239,12 +1239,14 @@
 
   function updateConverterLayout(elapsed=simulationElapsed){
     if(converterCells.length!==CONVERTER_ORDER.length)return;
-    const edgeWeight=Math.max(0,Math.min(1,elapsed/TUNING.converter.equalizeSeconds));
-    const totalWeight=3+edgeWeight*2;
+    const progress=Math.max(0,Math.min(1,elapsed/TUNING.converter.equalizeSeconds));
+    // 0:1:1.5:1:0 → 1:1:1:1:1；护盾从 1.5 线性回落到 1。
+    const weights=[progress,1,1.5-.5*progress,1,progress];
+    const totalWeight=weights.reduce((sum,weight)=>sum+weight,0);
     let converterX=PLAYFIELD.left;
     for(let i=0;i<converterCells.length;i++){
       const cell=converterCells[i];
-      const weight=i===0||i===converterCells.length-1?edgeWeight:1;
+      const weight=weights[i];
       const w=i===converterCells.length-1?PLAYFIELD.right-converterX:PLAYFIELD.width*weight/totalWeight;
       const inset=Math.min(TUNING.converter.inset,w*.5);
       cell.x=converterX;cell.w=w;cell.left=converterX+inset;cell.right=converterX+w-inset;cell.weight=weight;cell.share=w/PLAYFIELD.width;
@@ -4971,6 +4973,7 @@
   log('Demo v165 已启动：狙击锁定准星统一采用发射阵营色，并固定朝向不再旋转。');
   log('Demo v166 已启动：狙击锁定效果的准星与连线线宽统一调整为原来的 140%。');
   log('Demo v167 已启动：狙击锁定层改为不透明 source-over 合成，并在战场全部元素之后置顶绘制。');
+  log('Demo v168 已启动：火力兑现区按 0:1:1.5:1:0 开局，20 分钟线性过渡至并固定为 1:1:1:1:1。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
