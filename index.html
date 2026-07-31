@@ -703,6 +703,8 @@
   const MONOCHROME_WIN_SECONDS=10;
   let selectedFaction=0, selectedWeapon='scatter', paused=false, speed=1, simulationElapsed=0, last=performance.now();
   let gameEnded=false,winnerFaction=-1,monochromeFaction=-1,monochromeHoldSeconds=0;
+  // 每淘汰一个阵营，后续新生成/重新投放的弹珠起始数值提升 8 倍。
+  let factionStartValueMultiplier=1;
   const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
@@ -1451,6 +1453,7 @@
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
+    factionStartValueMultiplier=1;
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
     for(let i=0;i<4;i++){
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
@@ -1525,6 +1528,7 @@
   }
   const BASE_BALL_VALUE=2;
   function chooseValue(){return BASE_BALL_VALUE;}
+  function getBallStartValue(){return chooseValue()*factionStartValueMultiplier;}
   function radiusFromValue(value){
     const safeValue=Number.isFinite(value)?Math.max(BASE_BALL_VALUE,value):Number.MAX_VALUE;
     const currentMinutes=Math.max(0,simulationElapsed/60);
@@ -1567,7 +1571,7 @@
 
   function resetBallToTop(ball,{keepValue=false,useControls=false,delay=0.08,xOverride=null,returnKick=false}={}){
     if(!keepValue){
-      ball.value=chooseValue();ball.loopHits=0;
+      ball.value=getBallStartValue();ball.loopHits=0;
       if(multiplierPityCharges[ball.faction]>0){
         ball.value*=TUNING.plinko.pityStartMultiplier;
         multiplierPityCharges[ball.faction]--;
@@ -1604,7 +1608,8 @@
   }
 
   function createFixedBall(faction,slot,delayOverride=null){
-    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:chooseValue(),x:0,y:0,vx:0,vy:0,r:radiusFromValue(BASE_BALL_VALUE),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,sideWallKickCooldown:0,sideWallSide:'',gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
+    const startValue=getBallStartValue();
+    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,sideWallKickCooldown:0,sideWallSide:'',gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
     balls.push(ball);
     resetBallToTop(ball,{keepValue:true,delay:delayOverride===null?faction*.08+slot*.16:delayOverride});
   }
@@ -2524,7 +2529,7 @@
     const captureCapacity=Number.isFinite(budget)?Math.floor(budget/captureFirepower):Infinity;
     const qrEstimate=Math.max(.5,Math.round(r*2)/2),limEstimate=Math.ceil(qrEstimate+1);
     const requireRadialOrder=captureCapacity<(limEstimate*2+1)*(limEstimate*2+1);
-    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy,requireRadialOrder);let changed=0,spent=0,refreshed=false;
+    const {mask,baseX,baseY,qr}=getImpactMask(r,gx,gy,requireRadialOrder);let changed=0,spent=0,refreshed=false,partialCaptureUsed=false;
     for(let i=0;i<mask.length;i+=2){
       const x=baseX+mask[i],y=baseY+mask[i+1];
       if(x<0||x>=GRID_W||y<0||y>=GRID_H)continue;
@@ -2538,9 +2543,18 @@
         refreshTerritoryCell(idx,faction);refreshed=true;
         continue;
       }
-      if(spent+captureFirepower>budget)break;
+      const available=budget-spent;
+      if(available<=0)break;
+      if(available<captureFirepower){
+        // 最后一段残余火力也可完成一格占领，但同一次命中只允许兑现一格，避免零成本扩张。
+        if(partialCaptureUsed)break;
+        partialCaptureUsed=true;
+        spent=budget;
+      }else{
+        spent+=captureFirepower;
+      }
       if(previous!==255)territoryCounts[previous]--;
-      territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;spent+=captureFirepower;
+      territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;
     }
     if(changed||refreshed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
     return spent;
@@ -2944,6 +2958,7 @@
   function eliminateFaction(faction,attacker,x,y){
     if(eliminated[faction])return;
     eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;shieldGainFlash[faction]=0;machineGainFlash[faction]=0;
+    factionStartValueMultiplier*=8;
     machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
     for(let i=balls.length-1;i>=0;i--)if(balls[i].faction===faction)balls.splice(i,1);
@@ -2960,7 +2975,7 @@
     for(let ring=0;ring<4;ring++)addEffect({type:'baseHit',x,y,r:ring*5,max:26+ring*12,color:FACTIONS[faction].color,life:1.15-ring*.12,decay:1.45+ring*.18});
     const attackerName=attacker===null?'未知阵营':FACTIONS[attacker].name;
     log(`${FACTIONS[faction].name}核心被${attackerName}弹丸击中，已被淘汰`,faction);
-    if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}`,attacker!==null?attacker:null);
+    if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}；后续弹珠起始值 ×${factionStartValueMultiplier}`,attacker!==null?attacker:null);
     updateBaseTextCaches();updateStats();
   }
 
@@ -4708,6 +4723,7 @@
   log('Demo v154 已启动：弹珠速度越高，碰撞恢复系数与侧壁额外冲量越低，避免高速碰撞持续放大速度。');
   log('Demo v155 已启动：顶部新增已兑现小球直径统计。');
   log('Demo v156 已启动：已兑现小球改为按 12–20、20–30、30–40、40px以上区间统计数量。');
+  log('Demo v157 已启动：残余火力不足一格时仍可完成最后一格占领；每淘汰一个阵营，后续弹珠起始数值乘 8。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
