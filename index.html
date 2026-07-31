@@ -1316,7 +1316,7 @@
     drawZoneRailLabel('02','上层',BOARD.upperTop,BOARD.upperBottom,'#4ea8ff',ctx);
     drawZoneRailLabel('03','倍率',BOARD.multTop,BOARD.multBottom,'#bd4fff',ctx);
     drawZoneRailLabel('04','下层',BOARD.lowerTop,BOARD.lowerBottom,'#5e83ff',ctx);
-    drawZoneRailLabel('05','转换',BOARD.convertTop,BOARD.convertBottom,'#27e5ff',ctx);
+    drawZoneRailLabel('05','转换',BOARD.convertTop,BOARD.convertBottom,'#aeb6bb',ctx);
     ctx.save();ctx.setLineDash([8,7]);ctx.strokeStyle='rgba(33,228,255,.75)';ctx.lineWidth=1.4;ctx.shadowColor='#20dfff';ctx.shadowBlur=10;
     ctx.beginPath();ctx.moveTo(PLAYFIELD.left,BOARD.spawnY);ctx.lineTo(PLAYFIELD.right,BOARD.spawnY);ctx.stroke();ctx.restore();
     drawLeftZoneFrame(ctx,PLAYFIELD.left,BOARD.upperTop-10,PLAYFIELD.width,BOARD.upperBottom-BOARD.upperTop+26,'#318cf6');
@@ -4374,19 +4374,20 @@
       lctx.save();
       lctx.beginPath();lctx.rect(cell.x,BOARD.convertTop,cell.w,BOARD.convertBottom-BOARD.convertTop);lctx.clip();
       const gradient=lctx.createLinearGradient(cell.x,BOARD.convertTop,cell.x,cell.bottom);
-      gradient.addColorStop(0,'rgba(34,40,46,.36)');gradient.addColorStop(1,'rgba(7,11,16,.78)');
+      // 默认层严格使用灰阶，避免武器色或蓝色底染影响“无色”观感。
+      gradient.addColorStop(0,'rgba(48,48,48,.24)');gradient.addColorStop(1,'rgba(4,4,4,.72)');
       const innerWidth=Math.max(0,cell.right-cell.left);
       lctx.fillStyle=gradient;lctx.fillRect(cell.left,BOARD.convertTop,innerWidth,cell.bottom-BOARD.convertTop);
-      lctx.strokeStyle='rgba(142,153,161,.48)';lctx.lineWidth=1.1;lctx.shadowColor='rgba(196,211,218,.36)';lctx.shadowBlur=3;
+      lctx.strokeStyle='rgba(164,164,164,.44)';lctx.lineWidth=1.1;lctx.shadowColor='rgba(224,224,224,.22)';lctx.shadowBlur=3;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.convertTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.convertTop);lctx.stroke();
       const headerWidth=Math.max(0,innerWidth-6);
-      lctx.globalAlpha=.17;lctx.fillStyle='rgba(178,190,197,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+3,headerWidth,34);
-      lctx.globalAlpha=.48;lctx.fillStyle='rgba(207,219,225,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+37,headerWidth,1);
+      lctx.globalAlpha=.15;lctx.fillStyle='rgba(170,170,170,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+3,headerWidth,34);
+      lctx.globalAlpha=.42;lctx.fillStyle='rgba(210,210,210,.84)';lctx.fillRect(cell.left+3,BOARD.convertTop+37,headerWidth,1);
       const centerX=cell.x+cell.w/2;
       lctx.globalAlpha=1;
-      if(cell.w>=48)drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,centerX,BOARD.convertTop+24,{fillStyle:'rgba(220,229,233,.88)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(200,216,224,.58)',shadowBlur:3});
-      else if(cell.w>=16)drawText(lctx,WEAPONS[cell.key].icon,centerX,BOARD.convertTop+24,{fillStyle:'rgba(220,229,233,.88)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(200,216,224,.58)',shadowBlur:3});
-      if(cell.w>=44)drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,centerX,cell.bottom-10,{fillStyle:'rgba(112,158,188,.72)',font:'700 8px monospace',align:'center'});
+      if(cell.w>=48)drawText(lctx,`${WEAPONS[cell.key].icon}  ${WEAPONS[cell.key].name}`,centerX,BOARD.convertTop+24,{fillStyle:'rgba(232,232,232,.86)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(235,235,235,.36)',shadowBlur:3});
+      else if(cell.w>=16)drawText(lctx,WEAPONS[cell.key].icon,centerX,BOARD.convertTop+24,{fillStyle:'rgba(232,232,232,.86)',font:'700 9px "Microsoft YaHei",sans-serif',align:'center',shadowColor:'rgba(235,235,235,.36)',shadowBlur:3});
+      if(cell.w>=44)drawText(lctx,`PORT ${(cell.share*100).toFixed(1)}%`,centerX,cell.bottom-10,{fillStyle:'rgba(188,188,188,.64)',font:'700 8px monospace',align:'center'});
       lctx.restore();
     }
 
@@ -5015,6 +5016,7 @@
   log('Demo v170 已启动：累计火力数据条改为单栏展示，界面信息密度进一步收敛。');
   log('Demo v171 已启动：火力兑现区默认显示武器基础色，弹珠结算后短暂叠加对应阵营高亮。');
   log('Demo v172 已启动：火力兑现区默认改为中性无色，高亮饱和度增强并延长衰减时间。');
+  log('Demo v173 已启动：兑现区默认层进一步收敛为纯灰阶，移除残留的蓝色标签与边框偏色。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
