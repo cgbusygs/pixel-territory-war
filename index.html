@@ -70,7 +70,7 @@
     .subtitle{font-size:11px;color:#7d9bb8;margin-top:4px;letter-spacing:.08em}
     .toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
     .toolbar label{font-size:11px;color:#8ca8c1;letter-spacing:.05em}
-    .top-counters{display:grid;grid-template-columns:1.4fr 1fr;gap:10px;margin:-2px 0 12px}
+    .top-counters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:-2px 0 12px}
     .counter-card{padding:9px 12px;border:1px solid rgba(50,145,226,.42);background:linear-gradient(180deg,rgba(6,16,34,.92),rgba(3,9,22,.96));box-shadow:0 0 18px rgba(20,100,220,.08),inset 0 0 18px rgba(30,120,220,.07);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));}
     .counter-title{font-size:11px;color:#8eb9d7;letter-spacing:.12em;margin-bottom:6px}
     .counter-row{display:flex;flex-wrap:wrap;gap:6px 8px}
@@ -453,6 +453,10 @@
       <div class="counter-title">火力转换端口命中次数</div>
       <div class="counter-row" id="converterHitText"></div>
     </div>
+    <div class="counter-card">
+      <div class="counter-title">已兑现小球尺寸（直径）</div>
+      <div class="counter-row" id="settledSizeText"></div>
+    </div>
   </section>
 
   <section class="data-strip">
@@ -675,6 +679,7 @@
     recordStatus:document.getElementById('recordStatus'),
     multHitText:document.getElementById('multHitText'),
     converterHitText:document.getElementById('converterHitText'),
+    settledSizeText:document.getElementById('settledSizeText'),
     offsetRange:document.getElementById('offsetRange'),
     offsetText:document.getElementById('offsetText'),
     driftRange:document.getElementById('driftRange'),
@@ -710,6 +715,7 @@
   const eliminationFlash=[0,0,0,0];
   const multiplierDryStreak=new Uint8Array(4);
   const multiplierPityCharges=new Uint8Array(4);
+  const settledBallSizeStats={count:0,totalDiameter:0,minDiameter:Number.POSITIVE_INFINITY,maxDiameter:0,lastDiameter:0};
   // 护盾物理中心保持固定；以下偏移只用于表现大球撞击后的短暂视觉回弹。
   const shieldRecoilX=[0,0,0,0],shieldRecoilY=[0,0,0,0];
   const shieldRecoilVX=[0,0,0,0],shieldRecoilVY=[0,0,0,0];
@@ -2130,6 +2136,7 @@
         multiplierPityCharges[ball.faction]=Math.min(1,multiplierPityCharges[ball.faction]+1);
       }
     }else multiplierDryStreak[ball.faction]=0;
+    recordSettledBallSize(ball);
     const amount=ball.value;
     cell.hitCount=(cell.hitCount||0)+1;
     stocks[ball.faction][cell.key]+=amount;
@@ -3643,7 +3650,33 @@
     return items.map(item=>`<span class=\"counter-chip\">${item.label} ${formatNum(item.value)}</span>`).join('');
   }
 
-  let lastMultHitMarkup='',lastConverterHitMarkup='';
+  function resetSettledBallSizeStats(){
+    settledBallSizeStats.count=0;
+    settledBallSizeStats.totalDiameter=0;
+    settledBallSizeStats.minDiameter=Number.POSITIVE_INFINITY;
+    settledBallSizeStats.maxDiameter=0;
+    settledBallSizeStats.lastDiameter=0;
+  }
+  function recordSettledBallSize(ball){
+    const diameter=Number.isFinite(ball.r)?Math.max(0,ball.r*2):0;
+    if(diameter<=0)return;
+    settledBallSizeStats.count++;
+    settledBallSizeStats.totalDiameter+=diameter;
+    settledBallSizeStats.minDiameter=Math.min(settledBallSizeStats.minDiameter,diameter);
+    settledBallSizeStats.maxDiameter=Math.max(settledBallSizeStats.maxDiameter,diameter);
+    settledBallSizeStats.lastDiameter=diameter;
+  }
+
+  let lastMultHitMarkup='',lastConverterHitMarkup='',lastSettledSizeMarkup='';
+  function updateSettledBallSizeDisplay(){
+    if(!UI.settledSizeText)return;
+    const stats=settledBallSizeStats;
+    const markup=stats.count<=0
+      ? '<span class="counter-chip">暂无兑现</span>'
+      : `<span class="counter-chip">数量 ${formatNum(stats.count)}</span><span class="counter-chip">均值 ${ (stats.totalDiameter/stats.count).toFixed(1)}px</span><span class="counter-chip">范围 ${stats.minDiameter.toFixed(1)}–${stats.maxDiameter.toFixed(1)}px</span><span class="counter-chip">最近 ${stats.lastDiameter.toFixed(1)}px</span>`;
+    if(markup!==lastSettledSizeMarkup){lastSettledSizeMarkup=markup;UI.settledSizeText.innerHTML=markup;}
+  }
+
   function updateTopHitDisplays(){
     if(UI.multHitText){
       const items=multCells.filter(cell=>cell.type!=='gap').map(cell=>({label:cell.hitLabel,value:cell.hitCount||0}));
@@ -3653,11 +3686,14 @@
       const items=converterCells.map(cell=>({label:cell.hitLabel,value:cell.hitCount||0}));
       const markup=renderCounterChips(items);if(markup!==lastConverterHitMarkup){lastConverterHitMarkup=markup;UI.converterHitText.innerHTML=markup;}
     }
+    updateSettledBallSizeDisplay();
   }
 
   function resetTopHitCounts(){
     for(const cell of multCells)cell.hitCount=0;
     for(const cell of converterCells)cell.hitCount=0;
+    resetSettledBallSizeStats();
+    lastSettledSizeMarkup='';
     updateTopHitDisplays();
   }
   let lastOverloadBadgeText='';
@@ -4676,6 +4712,7 @@
   log('Demo v152 已启动：弹珠互撞与转盘碰撞点的单次动能损失调整为 10%，速度保留系数为 √0.90。');
   log('Demo v153 已启动：四个转盘统一转速调整为原设定的 80%，当前角速度为 2.52。');
   log('Demo v154 已启动：弹珠速度越高，碰撞恢复系数与侧壁额外冲量越低，避免高速碰撞持续放大速度。');
+  log('Demo v155 已启动：顶部新增已兑现小球直径统计，显示数量、均值、范围和最近一次尺寸。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
