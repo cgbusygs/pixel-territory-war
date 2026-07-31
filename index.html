@@ -802,6 +802,8 @@
   const SNIPER_LOCK_DELAY_SECONDS=1;
   const SNIPER_PICK_INTERVAL_FAST=.06;
   const SNIPER_PICK_INTERVAL_SLOW=.46;
+  const SNIPER_TRAIL_LIFETIME=10;
+  const SNIPER_TRAIL_FADE_LAYERS=8;
   const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
   const cannonAngle=INITIAL_CANNON_ANGLES.slice();
   const cannonStepCarry=[0,0,0,0];
@@ -1044,7 +1046,7 @@
     renderer:territoryGpuRenderer
   });
   const frameTrailSegments=[];
-  const sniperTrailSegments=[];
+  const sniperTrailSegments=[],sniperTrailHistory=[];
   const BALL_HASH_CELL=TUNING.collision.ballHashCell;
   const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
   const ballCollisionBuckets=Array.from({length:BALL_HASH_COLS*BALL_HASH_ROWS},()=>[]);
@@ -1488,7 +1490,7 @@
     seedBaseTerritories();
     if(territoryGpuActive)uploadTerritoryGpuFull();
     else territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;sniperTrailSegments.length=0;sniperAimJobs.length=0;nextSniperAimId=1;
+    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;sniperTrailSegments.length=0;sniperTrailHistory.length=0;sniperAimJobs.length=0;nextSniperAimId=1;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     factionStartValueMultiplier=1;
@@ -2775,13 +2777,6 @@
     trailCtx.fillRect(0,0,trailCanvas.width,trailCanvas.height);trailCtx.restore();
   }
 
-  function fadeSniperTrailLayer(dt){
-    sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='destination-out';
-    // 狙击尾迹半衰期约 2.9 秒，保持长时间可见但不会无限堆积。
-    sniperTrailCtx.fillStyle=`rgba(0,0,0,${Math.min(.08,1-Math.exp(-dt*.24))})`;
-    sniperTrailCtx.fillRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);sniperTrailCtx.restore();
-  }
-
   function isOccupiedWarPoint(x,y){
     const gx=Math.max(0,Math.min(GRID_W-1,Math.floor(x/WV.w*GRID_W)));
     const gy=Math.max(0,Math.min(GRID_H-1,Math.floor(y/WV.h*GRID_H)));
@@ -2810,15 +2805,45 @@
     if(count){trailCtx.globalAlpha=alpha;trailCtx.strokeStyle=color;trailCtx.lineWidth=width*scale;trailCtx.stroke();}
   }
 
-  function strokeSniperTrailGroup(faction,width,alpha,color){
-    const scale=TRAIL_SCALE;let count=0;
-    sniperTrailCtx.beginPath();
+  function renderSniperTrailHistory(dt){
     for(let i=0;i<sniperTrailSegments.length;i+=6){
-      if(sniperTrailSegments[i+4]!==faction)continue;
-      sniperTrailCtx.moveTo(sniperTrailSegments[i]*scale,sniperTrailSegments[i+1]*scale);
-      sniperTrailCtx.lineTo(sniperTrailSegments[i+2]*scale,sniperTrailSegments[i+3]*scale);count++;
+      const x1=sniperTrailSegments[i],y1=sniperTrailSegments[i+1],x2=sniperTrailSegments[i+2],y2=sniperTrailSegments[i+3];
+      if(!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2))continue;
+      sniperTrailHistory.push({x1,y1,x2,y2,faction:sniperTrailSegments[i+4],age:0});
     }
-    if(count){sniperTrailCtx.globalAlpha=alpha;sniperTrailCtx.strokeStyle=color;sniperTrailCtx.lineWidth=width*scale;sniperTrailCtx.stroke();}
+    sniperTrailSegments.length=0;
+    for(let i=sniperTrailHistory.length-1;i>=0;i--){
+      const segment=sniperTrailHistory[i];segment.age+=dt;
+      if(segment.age>=SNIPER_TRAIL_LIFETIME){const last=sniperTrailHistory.pop();if(i<sniperTrailHistory.length)sniperTrailHistory[i]=last;}
+    }
+    sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
+    const scale=TRAIL_SCALE;
+    const bins=Array.from({length:SNIPER_TRAIL_FADE_LAYERS},()=>Array.from({length:FACTIONS.length},()=>[]));
+    for(const segment of sniperTrailHistory){
+      const layer=Math.min(SNIPER_TRAIL_FADE_LAYERS-1,Math.floor(segment.age/SNIPER_TRAIL_LIFETIME*SNIPER_TRAIL_FADE_LAYERS));
+      bins[layer][segment.faction].push(segment);
+    }
+    sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='lighter';sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
+    for(let layer=0;layer<SNIPER_TRAIL_FADE_LAYERS;layer++){
+      const minAge=SNIPER_TRAIL_LIFETIME*layer/SNIPER_TRAIL_FADE_LAYERS;
+      const maxAge=SNIPER_TRAIL_LIFETIME*(layer+1)/SNIPER_TRAIL_FADE_LAYERS;
+      const midpoint=(minAge+maxAge)*.5,fade=Math.pow(Math.max(0,1-midpoint/SNIPER_TRAIL_LIFETIME),1.35);
+      for(let faction=0;faction<FACTIONS.length;faction++){
+        const color=FACTIONS[faction].color,segments=bins[layer][faction];
+        if(!segments.length)continue;
+        sniperTrailCtx.beginPath();
+        for(const segment of segments){
+          sniperTrailCtx.moveTo(segment.x1*scale,segment.y1*scale);sniperTrailCtx.lineTo(segment.x2*scale,segment.y2*scale);
+        }
+        sniperTrailCtx.globalAlpha=.12*fade;sniperTrailCtx.strokeStyle=color;sniperTrailCtx.lineWidth=8*scale;sniperTrailCtx.stroke();
+        sniperTrailCtx.beginPath();
+        for(const segment of segments){
+          sniperTrailCtx.moveTo(segment.x1*scale,segment.y1*scale);sniperTrailCtx.lineTo(segment.x2*scale,segment.y2*scale);
+        }
+        sniperTrailCtx.globalAlpha=.58*fade;sniperTrailCtx.strokeStyle=mixHexColors(color,'#ffffff',.64);sniperTrailCtx.lineWidth=2.1*scale;sniperTrailCtx.stroke();
+      }
+    }
+    sniperTrailCtx.restore();
   }
 
   function renderTrailBatch(dt){
@@ -2829,14 +2854,8 @@
       strokeTrailGroup(f,2,2.5,.32,color);
     }
     trailCtx.restore();
-    fadeSniperTrailLayer(dt);sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='lighter';sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
-    for(let f=0;f<4;f++){
-      const color=FACTIONS[f].color;
-      strokeSniperTrailGroup(f,8,.12,color);
-      strokeSniperTrailGroup(f,2.1,.58,mixHexColors(color,'#ffffff',.64));
-    }
-    sniperTrailCtx.restore();
-    frameTrailSegments.length=0;sniperTrailSegments.length=0;
+    renderSniperTrailHistory(dt);
+    frameTrailSegments.length=0;
   }
 
   function releaseProjectile(index){
@@ -4924,6 +4943,7 @@
   log('Demo v159 已启动：已兑现小球直径区间改为紧凑柱状图，柱高表示各区间数量，悬停可查看精确区间与数量。');
   log('Demo v160 已启动：已兑现小球直径统计细化为每 0.5px 一个区间，50px及以上归入末档。');
   log('Demo v161 已启动：狙击改为单枚直径 3.5px、占领半径 3px；发射前进行 5–6 秒随机减速锁定，锁定后 1 秒发射，并启用长持续尾迹。');
+  log('Demo v162 已启动：狙击尾迹改为按独立轨迹段年龄分层衰减，最长可见约 10 秒，避免连续叠加造成永久残留观感。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
