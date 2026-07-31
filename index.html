@@ -718,6 +718,7 @@
   // 每淘汰一个阵营，后续新生成/重新投放的弹珠起始数值提升 8 倍。
   let factionStartValueMultiplier=1;
   const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
+  const sniperAimJobs=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
   const INITIAL_SHIELD_VALUE=10000000;
   const INITIAL_MACHINE_FIREPOWER=400000;
@@ -794,6 +795,13 @@
   const SHIELD_INTERIOR_EDGE_ALPHA=180/255;
   const SHIELD_CLOCKWISE_ROTATION_SPEED=.46;
   const SNIPER_PROJECTILE_SPEED=820;
+  const SNIPER_PROJECTILE_DIAMETER=3.5;
+  const SNIPER_TERRITORY_RADIUS=3;
+  const SNIPER_AIM_MIN_SECONDS=5;
+  const SNIPER_AIM_MAX_SECONDS=6;
+  const SNIPER_LOCK_DELAY_SECONDS=1;
+  const SNIPER_PICK_INTERVAL_FAST=.06;
+  const SNIPER_PICK_INTERVAL_SLOW=.46;
   const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
   const cannonAngle=INITIAL_CANNON_ANGLES.slice();
   const cannonStepCarry=[0,0,0,0];
@@ -1036,6 +1044,7 @@
     renderer:territoryGpuRenderer
   });
   const frameTrailSegments=[];
+  const sniperTrailSegments=[];
   const BALL_HASH_CELL=TUNING.collision.ballHashCell;
   const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
   const ballCollisionBuckets=Array.from({length:BALL_HASH_COLS*BALL_HASH_ROWS},()=>[]);
@@ -1046,7 +1055,7 @@
   const projectileCollisionBuckets=Array.from({length:PROJECTILE_HASH_COLS*PROJECTILE_HASH_ROWS},()=>[]);
   const activeProjectileBuckets=[];
   const activeOrbCollisionProjectiles=[];
-  const renderOrbProjectiles=[],renderOtherProjectiles=[],renderMachineProjectiles=[];
+  const renderOrbProjectiles=[],renderOtherProjectiles=[],renderSniperProjectiles=[],renderMachineProjectiles=[];
   const renderOtherProjectilesByFaction=Array.from({length:FACTIONS.length},()=>[]);
   const renderMachineProjectilesByFaction=Array.from({length:FACTIONS.length},()=>[]);
   const PROJECTILE_COLLISION_KIND=Object.freeze({OTHER:0,MACHINE:1,ORB:2});
@@ -1058,7 +1067,7 @@
     orbHot:mixHexColors(f.color,'#fff4c9',.48),
     orbDeep:mixHexColors(f.color,'#020814',.58)
   }));
-  let nextProjectileId=1;
+  let nextProjectileId=1,nextSniperAimId=1;
 
   // 低分辨率独立尾迹层：常规武器与机枪分层衰减，避免延长机枪光丝时污染其他武器。
   const trailCanvas=document.createElement('canvas');
@@ -1066,6 +1075,11 @@
   trailCanvas.height=Math.round(WV.h*TRAIL_SCALE);
   const trailCtx=trailCanvas.getContext('2d',{alpha:true,desynchronized:true});
   trailCtx.lineCap='round';trailCtx.lineJoin='round';
+  const sniperTrailCanvas=document.createElement('canvas');
+  sniperTrailCanvas.width=Math.round(WV.w*TRAIL_SCALE);
+  sniperTrailCanvas.height=Math.round(WV.h*TRAIL_SCALE);
+  const sniperTrailCtx=sniperTrailCanvas.getContext('2d',{alpha:true,desynchronized:true});
+  sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
 
   // 左侧矩阵背景网格和右侧战场背景均离屏预渲染。
   const leftStaticCanvas=document.createElement('canvas');
@@ -1474,8 +1488,8 @@
     seedBaseTerritories();
     if(territoryGpuActive)uploadTerritoryGpuFull();
     else territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;
-    trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);
+    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;sniperTrailSegments.length=0;sniperAimJobs.length=0;nextSniperAimId=1;
+    trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
     factionStartValueMultiplier=1;
     multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
@@ -2323,6 +2337,72 @@
     }
     return best||[0.12+Math.random()*.76,0.12+Math.random()*.76];
   }
+
+  function getSniperTargetCandidates(faction){
+    const candidates=[];
+    for(let enemy=0;enemy<FACTIONS.length;enemy++){
+      if(enemy!==faction&&!eliminated[enemy])candidates.push(enemy);
+    }
+    return candidates;
+  }
+
+  function pickSniperTarget(job){
+    const candidates=getSniperTargetCandidates(job.faction);
+    if(candidates.length===0)return -1;
+    const fresh=candidates.filter(faction=>faction!==job.currentTargetFaction);
+    const pool=fresh.length>0?fresh:candidates;
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+
+  function queueSniperTargeting(faction,totalFirepower){
+    const firepower=Math.max(0,Math.floor(totalFirepower));
+    if(firepower<=0||eliminated[faction])return;
+    const job={
+      id:nextSniperAimId++,faction,firepower,
+      elapsed:0,duration:SNIPER_AIM_MIN_SECONDS+Math.random()*(SNIPER_AIM_MAX_SECONDS-SNIPER_AIM_MIN_SECONDS),
+      nextPickAt:0,currentTargetFaction:-1,selectedTargetFaction:-1,
+      phase:'selecting',lockElapsed:0,pickCount:0
+    };
+    job.currentTargetFaction=pickSniperTarget(job);
+    if(job.currentTargetFaction<0)return;
+    sniperAimJobs.push(job);
+    log(`${FACTIONS[faction].name}狙击开始随机扫描目标，预计 ${job.duration.toFixed(1)} 秒完成锁定`,faction);
+  }
+
+  function updateSniperAimJobs(dt){
+    for(let i=sniperAimJobs.length-1;i>=0;i--){
+      const job=sniperAimJobs[i];
+      if(eliminated[job.faction]||job.firepower<=0){sniperAimJobs.splice(i,1);continue;}
+      const candidates=getSniperTargetCandidates(job.faction);
+      if(candidates.length===0){sniperAimJobs.splice(i,1);continue;}
+      if(job.phase==='selecting'){
+        job.elapsed=Math.min(job.duration,job.elapsed+dt);
+        const progress=Math.min(1,job.elapsed/job.duration),slowdown=smooth01(progress);
+        while(job.elapsed>=job.nextPickAt&&job.elapsed<job.duration-1e-9){
+          const next=pickSniperTarget(job);
+          if(next<0)break;
+          job.currentTargetFaction=next;job.pickCount++;
+          const interval=SNIPER_PICK_INTERVAL_FAST+(SNIPER_PICK_INTERVAL_SLOW-SNIPER_PICK_INTERVAL_FAST)*slowdown;
+          job.nextPickAt=job.elapsed+interval;
+        }
+        if(job.elapsed>=job.duration-1e-9){
+          if(!candidates.includes(job.currentTargetFaction))job.currentTargetFaction=pickSniperTarget(job);
+          job.selectedTargetFaction=job.currentTargetFaction;job.phase='locked';job.lockElapsed=0;
+          log(`${FACTIONS[job.faction].name}狙击已锁定${FACTIONS[job.selectedTargetFaction].name}，1 秒后发射`,job.faction);
+        }
+      }else{
+        job.lockElapsed+=dt;
+        if(job.lockElapsed<SNIPER_LOCK_DELAY_SECONDS)continue;
+        if(!candidates.includes(job.selectedTargetFaction))job.selectedTargetFaction=pickSniperTarget(job);
+        if(job.selectedTargetFaction<0){sniperAimJobs.splice(i,1);continue;}
+        const start=FACTIONS[job.faction].base,target=FACTIONS[job.selectedTargetFaction].base;
+        queueProjectile(0,{kind:'sniper',faction:job.faction,start,target,firepower:job.firepower});
+        log(`${FACTIONS[job.faction].name}狙击弹已发射，目标：${FACTIONS[job.selectedTargetFaction].name}`,job.faction);
+        sniperAimJobs.splice(i,1);
+      }
+    }
+  }
+
   function queueProjectile(time,data){if(!eliminated[data.faction])fireQueue.push({time,data});}
   function shieldRadiusPx(value){
     if(value<=0)return 0;
@@ -2422,13 +2502,8 @@
     }
 
     if(weapon==='sniper'){
-      const start=FACTIONS[faction].base;
-      const requested=Math.min(6,1+Math.floor(totalVisualPower/3));
-      const allocations=distributeIntegerFirepower(totalFirepower,requested);
-      for(let i=0;i<allocations.length;i++){
-        queueProjectile(i*.12,{kind:'sniper',faction,start,target:targetFor(faction),firepower:allocations[i]});
-      }
-      log(`${FACTIONS[faction].name}结算狙击总火力 ${formatNum(totalFirepower)}，整数分配给 ${allocations.length} 枚高速持续弹丸`,faction);
+      queueSniperTargeting(faction,totalFirepower);
+      log(`${FACTIONS[faction].name}结算狙击火力 ${formatNum(totalFirepower)}，开始单枚弹道预瞄`,faction);
     }
   }
 
@@ -2457,7 +2532,7 @@
     p.power=power;p.initialFirepower=firepower;p.firepower=firepower;
     p.rounds=d.rounds||firepower;p.visualPellets=d.kind==='machine'?1:(d.visualPellets||1);p.visualSeed=d.visualSeed??machineShotIndex[d.faction]??0;
     // 大球使用当前剩余火力计算动态半径；其他弹丸保持既有尺寸。
-    p.r=d.kind==='orb'?orbDiameterFromFirepower(firepower)*.5:d.kind==='machine'?2.2*MACHINE_CONTACT_SCALE:d.kind==='sniper'?1.8:2.7;
+    p.r=d.kind==='orb'?orbDiameterFromFirepower(firepower)*.5:d.kind==='machine'?2.2*MACHINE_CONTACT_SCALE:d.kind==='sniper'?SNIPER_PROJECTILE_DIAMETER*.5:2.7;
     p.nominalSpeed=sp;
     p.jitterPhase=(p.visualSeed*.61803398875+d.faction*1.73)%TAU;
     p.jitterPhaseB=(p.visualSeed*.271828+d.faction*2.41+1.2)%TAU;
@@ -2649,7 +2724,7 @@
   }
 
   function projectileTerritoryRadius(p){
-    return p.kind==='machine'?1.65*MACHINE_COLLISION_SCALE*MACHINE_CONTACT_SCALE:p.kind==='orb'?p.r:p.kind==='sniper'?1.35:2.8;
+    return p.kind==='machine'?1.65*MACHINE_COLLISION_SCALE*MACHINE_CONTACT_SCALE:p.kind==='orb'?p.r:p.kind==='sniper'?SNIPER_TERRITORY_RADIUS:2.8;
   }
 
   function territoryOwnerAtPoint(x,y){
@@ -2700,6 +2775,13 @@
     trailCtx.fillRect(0,0,trailCanvas.width,trailCanvas.height);trailCtx.restore();
   }
 
+  function fadeSniperTrailLayer(dt){
+    sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='destination-out';
+    // 狙击尾迹半衰期约 2.9 秒，保持长时间可见但不会无限堆积。
+    sniperTrailCtx.fillStyle=`rgba(0,0,0,${Math.min(.08,1-Math.exp(-dt*.24))})`;
+    sniperTrailCtx.fillRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);sniperTrailCtx.restore();
+  }
+
   function isOccupiedWarPoint(x,y){
     const gx=Math.max(0,Math.min(GRID_W-1,Math.floor(x/WV.w*GRID_W)));
     const gy=Math.max(0,Math.min(GRID_H-1,Math.floor(y/WV.h*GRID_H)));
@@ -2707,8 +2789,12 @@
   }
 
   function pushTrailSegment(p){
-    // v131：四类弹丸都只保留当前弹体表现，不再写入会跨帧残留的轨迹画布。
-    if(p.kind==='machine'||p.kind==='orb'||p.kind==='scatter'||p.kind==='sniper')return;
+    // 狙击弹使用独立的长持续尾迹层；其他弹种仍不写入跨帧残留轨迹。
+    if(p.kind==='sniper'){
+      sniperTrailSegments.push(p.prevX,p.prevY,p.x,p.y,p.faction,p.id);
+      return;
+    }
+    if(p.kind==='machine'||p.kind==='orb'||p.kind==='scatter')return;
     const kindCode=p.kind==='orb'?1:2;
     frameTrailSegments.push(p.prevX,p.prevY,p.x,p.y,p.faction,kindCode,p.id,0);
   }
@@ -2724,6 +2810,17 @@
     if(count){trailCtx.globalAlpha=alpha;trailCtx.strokeStyle=color;trailCtx.lineWidth=width*scale;trailCtx.stroke();}
   }
 
+  function strokeSniperTrailGroup(faction,width,alpha,color){
+    const scale=TRAIL_SCALE;let count=0;
+    sniperTrailCtx.beginPath();
+    for(let i=0;i<sniperTrailSegments.length;i+=6){
+      if(sniperTrailSegments[i+4]!==faction)continue;
+      sniperTrailCtx.moveTo(sniperTrailSegments[i]*scale,sniperTrailSegments[i+1]*scale);
+      sniperTrailCtx.lineTo(sniperTrailSegments[i+2]*scale,sniperTrailSegments[i+3]*scale);count++;
+    }
+    if(count){sniperTrailCtx.globalAlpha=alpha;sniperTrailCtx.strokeStyle=color;sniperTrailCtx.lineWidth=width*scale;sniperTrailCtx.stroke();}
+  }
+
   function renderTrailBatch(dt){
     fadeTrailLayer(dt);trailCtx.save();trailCtx.globalCompositeOperation='lighter';trailCtx.lineCap='round';trailCtx.lineJoin='round';
     for(let f=0;f<4;f++){
@@ -2732,7 +2829,14 @@
       strokeTrailGroup(f,2,2.5,.32,color);
     }
     trailCtx.restore();
-    frameTrailSegments.length=0;
+    fadeSniperTrailLayer(dt);sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='lighter';sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
+    for(let f=0;f<4;f++){
+      const color=FACTIONS[f].color;
+      strokeSniperTrailGroup(f,8,.12,color);
+      strokeSniperTrailGroup(f,2.1,.58,mixHexColors(color,'#ffffff',.64));
+    }
+    sniperTrailCtx.restore();
+    frameTrailSegments.length=0;sniperTrailSegments.length=0;
   }
 
   function releaseProjectile(index){
@@ -2988,6 +3092,7 @@
     for(let i=balls.length-1;i>=0;i--)if(balls[i].faction===faction)balls.splice(i,1);
     for(const projectile of projectiles)if(projectile.faction===faction)projectile.dead=true;
     for(let i=fireQueue.length-1;i>=0;i--)if(fireQueue[i].data.faction===faction)fireQueue.splice(i,1);
+    for(let i=sniperAimJobs.length-1;i>=0;i--)if(sniperAimJobs[i].faction===faction)sniperAimJobs.splice(i,1);
     for(let i=beams.length-1;i>=0;i--)if(beams[i].faction===faction)beams.splice(i,1);
     const rewardSummary=[];
     for(let survivor=0;survivor<FACTIONS.length;survivor++){
@@ -3387,6 +3492,7 @@
 
   function updateWar(dt){
     updateCannons(dt);
+    updateSniperAimJobs(dt);
     territorySimCarry+=dt;territoryUploadCarry+=dt;
     const paintNow=territorySimCarry>=TERRITORY_STEP;
     if(paintNow)territorySimCarry%=TERRITORY_STEP;
@@ -4405,12 +4511,52 @@
     wctx.restore();
   }
 
+  function drawSniperTargeting(){
+    if(sniperAimJobs.length===0)return;
+    const now=performance.now()/1000;
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';wctx.lineJoin='round';wctx.textAlign='center';wctx.textBaseline='middle';
+    for(const job of sniperAimJobs){
+      const targetFaction=job.phase==='locked'?job.selectedTargetFaction:job.currentTargetFaction;
+      if(targetFaction<0||eliminated[targetFaction])continue;
+      const source=FACTIONS[job.faction],target=FACTIONS[targetFaction];
+      const sx=source.base[0]*WV.w,sy=source.base[1]*WV.h,tx=target.base[0]*WV.w,ty=target.base[1]*WV.h;
+      const pulse=.5+.5*Math.sin(now*8.5+job.id*.7),locked=job.phase==='locked';
+      const candidates=getSniperTargetCandidates(job.faction);
+      for(const candidate of candidates){
+        const bx=FACTIONS[candidate].base[0]*WV.w,by=FACTIONS[candidate].base[1]*WV.h;
+        const candidateAlpha=candidate===targetFaction?(locked?.58:.24):.10;
+        wctx.globalAlpha=candidateAlpha;wctx.strokeStyle=FACTIONS[candidate].color;wctx.lineWidth=candidate===targetFaction?1.15:.65;
+        wctx.beginPath();wctx.arc(bx,by,BASE_OUTER_RADIUS+8+(candidate===targetFaction?pulse*4:0),0,TAU);wctx.stroke();
+      }
+      wctx.globalAlpha=locked?.28:.15;wctx.strokeStyle=source.color;wctx.lineWidth=locked?1.7:1;
+      wctx.setLineDash(locked?[]:[5,10]);wctx.beginPath();wctx.moveTo(sx,sy);wctx.lineTo(tx,ty);wctx.stroke();wctx.setLineDash([]);
+      const ring=BASE_OUTER_RADIUS+14+(locked?pulse*5:0);
+      wctx.globalAlpha=locked?.92:.58+.18*pulse;wctx.strokeStyle=locked?'#ffffff':target.color;wctx.lineWidth=locked?1.8:1.25;
+      wctx.beginPath();wctx.arc(tx,ty,ring,0,TAU);wctx.stroke();
+      const tick=locked?11:8;
+      for(let k=0;k<4;k++){
+        const a=k*Math.PI/2+now*(locked?.12:.42),cos=Math.cos(a),sin=Math.sin(a);
+        wctx.beginPath();wctx.moveTo(tx+cos*(ring-tick),ty+sin*(ring-tick));wctx.lineTo(tx+cos*(ring+tick),ty+sin*(ring+tick));wctx.stroke();
+      }
+      const remaining=locked?Math.max(0,SNIPER_LOCK_DELAY_SECONDS-job.lockElapsed):Math.max(0,job.duration-job.elapsed);
+      wctx.globalAlpha=.88;wctx.fillStyle=locked?'#ffffff':source.color;wctx.font='700 10px monospace';
+      wctx.fillText(locked?`LOCKED ${remaining.toFixed(1)}s`:`SCAN ${remaining.toFixed(1)}s`,tx,ty-ring-10);
+      wctx.globalAlpha=.52;wctx.fillStyle=target.color;wctx.font='700 9px monospace';
+      wctx.fillText(`${source.name} → ${target.name}`,tx,ty+ring+11);
+    }
+    wctx.restore();
+  }
+
   function prepareProjectileRenderFrame(){
-    renderOrbProjectiles.length=0;renderOtherProjectiles.length=0;renderMachineProjectiles.length=0;
+    renderOrbProjectiles.length=0;renderOtherProjectiles.length=0;renderSniperProjectiles.length=0;renderMachineProjectiles.length=0;
     for(let f=0;f<FACTIONS.length;f++){renderOtherProjectilesByFaction[f].length=0;renderMachineProjectilesByFaction[f].length=0;}
     for(const p of projectiles){
       if(p.kind==='orb'){
         renderOrbProjectiles.push(p);
+        continue;
+      }
+      if(p.kind==='sniper'){
+        renderSniperProjectiles.push(p);
         continue;
       }
       if(p.kind!=='machine'){
@@ -4435,7 +4581,7 @@
     if(territoryGpuActive)renderTerritoryGpu();
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?territoryGpuCanvas:territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
-    wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.96;wctx.imageSmoothingEnabled=true;wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.98;wctx.imageSmoothingEnabled=true;wctx.drawImage(sniperTrailCanvas,0,0,WV.w,WV.h);wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
     prepareProjectileRenderFrame();
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
@@ -4487,6 +4633,22 @@
         wctx.moveTo(p.x+r,p.y);wctx.arc(p.x,p.y,r,0,TAU);hasMachineSpark=true;
       }
       if(hasMachineSpark){wctx.globalAlpha=.88;wctx.fillStyle=palette.machineSpark;wctx.fill();}
+    }
+    wctx.restore();
+
+    // 狙击弹：单枚 3.5px 弹体，叠加一段随速度方向延伸的高亮头部，与独立长尾迹层衔接。
+    wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';
+    for(const p of renderSniperProjectiles){
+      const color=FACTIONS[p.faction].color,light=mixHexColors(color,'#ffffff',.78);
+      const speed=Math.hypot(p.vx,p.vy)||1,ux=p.vx/speed,uy=p.vy/speed;
+      const tailLength=30+Math.min(22,speed*.018),tx=p.x-ux*tailLength,ty=p.y-uy*tailLength;
+      wctx.globalAlpha=.16;wctx.strokeStyle=color;wctx.lineWidth=5.8;wctx.beginPath();wctx.moveTo(tx,ty);wctx.lineTo(p.x,p.y);wctx.stroke();
+      wctx.globalAlpha=.58;wctx.strokeStyle=light;wctx.lineWidth=1.05;wctx.beginPath();wctx.moveTo(tx,ty);wctx.lineTo(p.x,p.y);wctx.stroke();
+      const glow=wctx.createRadialGradient(p.x,p.y,0,p.x,p.y,6.5);
+      glow.addColorStop(0,'rgba(255,255,255,.96)');glow.addColorStop(.22,colorWithAlpha(light,.72));glow.addColorStop(1,colorWithAlpha(color,0));
+      wctx.globalAlpha=.96;wctx.fillStyle=glow;wctx.beginPath();wctx.arc(p.x,p.y,6.5,0,TAU);wctx.fill();
+      wctx.globalAlpha=.98;wctx.fillStyle='#ffffff';wctx.beginPath();wctx.arc(p.x,p.y,p.r*.72,0,TAU);wctx.fill();
+      wctx.globalAlpha=.92;wctx.strokeStyle=light;wctx.lineWidth=.7;wctx.beginPath();wctx.arc(p.x,p.y,p.r,0,TAU);wctx.stroke();
     }
     wctx.restore();
 
@@ -4631,6 +4793,7 @@
       if(eliminationFlash[f]>0){wctx.save();wctx.globalAlpha=eliminationFlash[f]*.7;wctx.strokeStyle='#ff6378';wctx.lineWidth=2;wctx.beginPath();wctx.arc(bx,by,BASE_BODY_RADIUS+(1-eliminationFlash[f])*42,0,TAU);wctx.stroke();wctx.restore();}
       wctx.drawImage(baseTextCanvases[f],bx-90,by-28);
     }
+    drawSniperTargeting();
     wctx.globalAlpha=1;wctx.globalCompositeOperation='source-over';
   }
   function completeMonochromeVictory(faction){
@@ -4760,6 +4923,7 @@
   log('Demo v158 已启动：已兑现小球直径统计改为每 2px 一个区间，50px及以上归入末档。');
   log('Demo v159 已启动：已兑现小球直径区间改为紧凑柱状图，柱高表示各区间数量，悬停可查看精确区间与数量。');
   log('Demo v160 已启动：已兑现小球直径统计细化为每 0.5px 一个区间，50px及以上归入末档。');
+  log('Demo v161 已启动：狙击改为单枚直径 3.5px、占领半径 3px；发射前进行 5–6 秒随机减速锁定，锁定后 1 秒发射，并启用长持续尾迹。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
