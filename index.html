@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v146 · Rotor 60FPS</title>
+  <title>像素领土战争 Demo v147 · Matrix 80% Speed</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -420,7 +420,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v146</h1>
+        <h1>像素领土战争 · 战场态势 v147</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -1080,6 +1080,7 @@
   // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值。
   const PEG_DISC_ORBIT_RADIUS=123.552;
   const PEG_DISC_SPIN_SPEED=3.15;
+  const MATRIX_SIMULATION_SPEED_SCALE=.8;
   // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
   const MATRIX_SIDE_WALL_KICK_MULT=1.25;
   const MATRIX_SIDE_WALL_COOLDOWN=0.12;
@@ -3379,7 +3380,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v146-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v147-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -4471,7 +4472,7 @@
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
     simulationElapsed+=dt;
     updateConverterLayout(simulationElapsed);
-    updateBalls(dt);updateWar(dt);updateMonochromeVictory(dt);
+    updateBalls(dt*MATRIX_SIMULATION_SPEED_SCALE);updateWar(dt);updateMonochromeVictory(dt);
     hudTextCarry+=dt;
     if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;updateBaseTextCaches();}
   }
@@ -4543,7 +4544,7 @@
   for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
   lastPowerHistoryTime=0;
   updateStocks();updateStats();
-  log('Demo v146 已启动：四个转盘改为恒速电机模型，弹珠仍受运动碰撞点推动但不再改变转盘角速度；左侧渲染统一为 60 FPS。');
+  log('Demo v147 已启动：火力生成矩阵运动速度调整为当前 80%，战场模拟与页面渲染帧率保持不变。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
