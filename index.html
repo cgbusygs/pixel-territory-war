@@ -75,6 +75,18 @@
     .counter-title{font-size:11px;color:#8eb9d7;letter-spacing:.12em;margin-bottom:6px}
     .counter-row{display:flex;flex-wrap:wrap;gap:6px 8px}
     .counter-chip{padding:3px 7px;border:1px solid rgba(58,116,165,.72);border-radius:1px;background:rgba(6,17,33,.72);font:700 11px/1.2 monospace;color:#eaf8ff;clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px))}
+    .settled-size-chart{display:grid;gap:4px;min-width:0}
+    .settled-chart-meta{display:flex;align-items:baseline;justify-content:space-between;gap:8px;color:#8fb3c9;font:10px/1 monospace;letter-spacing:.06em}
+    .settled-chart-total{color:#dff8ff;font-weight:800;text-shadow:0 0 8px rgba(28,224,255,.24)}
+    .settled-chart-total b{font-size:14px;color:#fff;margin-left:4px}
+    .settled-chart-note{color:#55dfff;opacity:.78}
+    .settled-chart-plot{height:47px;display:grid;grid-template-columns:repeat(20,minmax(2px,1fr));align-items:end;gap:2px;padding:5px 2px 0;border-bottom:1px solid rgba(47,153,207,.46);background:linear-gradient(180deg,rgba(14,77,108,.15),rgba(3,14,28,.34));position:relative}
+    .settled-chart-plot::before{content:"";position:absolute;inset:0 0 1px;background:repeating-linear-gradient(to top,transparent 0 13px,rgba(104,199,230,.09) 13px 14px);pointer-events:none}
+    .settled-chart-bar{position:relative;z-index:1;display:block;min-width:2px;height:var(--bar-height);min-height:2px;background:linear-gradient(180deg,#dffeff 0%,#27dfff 26%,#1679e8 100%);border:1px solid rgba(115,239,255,.68);border-bottom:0;box-shadow:0 0 7px rgba(27,216,255,.35);transition:height .22s ease,filter .18s ease}
+    .settled-chart-bar.is-empty{opacity:.24;box-shadow:none}
+    .settled-chart-bar:hover{filter:brightness(1.45);box-shadow:0 0 11px rgba(102,239,255,.72)}
+    .settled-chart-axis{display:flex;justify-content:space-between;gap:4px;color:#7396ae;font:9px/1 monospace;white-space:nowrap}
+    .settled-chart-empty{position:absolute;inset:0;display:grid;place-items:center;color:#7093a9;font:10px/1 monospace;letter-spacing:.08em;pointer-events:none}
     .btn,.faction-btn,.weapon-btn{
       color:#eafbff;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .2s,background .2s;
     }
@@ -455,7 +467,7 @@
     </div>
     <div class="counter-card">
       <div class="counter-title">已兑现小球尺寸区间（直径）</div>
-      <div class="counter-row" id="settledSizeText"></div>
+      <div class="settled-size-chart" id="settledSizeText" role="img" aria-label="暂无兑现"></div>
     </div>
   </section>
 
@@ -3692,10 +3704,18 @@
   function updateSettledBallSizeDisplay(){
     if(!UI.settledSizeText)return;
     const total=settledBallSizeBucketCounts.reduce((sum,count)=>sum+count,0);
-    const markup=total<=0
-      ? '<span class="counter-chip">暂无兑现</span>'
-      : renderCounterChips([{label:'总计',value:total},...SETTLED_SIZE_BUCKET_LABELS.map((label,index)=>({label,value:settledBallSizeBucketCounts[index]}))]);
-    if(markup!==lastSettledSizeMarkup){lastSettledSizeMarkup=markup;UI.settledSizeText.innerHTML=markup;}
+    const peak=Math.max(1,...settledBallSizeBucketCounts);
+    const bars=SETTLED_SIZE_BUCKET_LABELS.map((label,index)=>{
+      const count=settledBallSizeBucketCounts[index];
+      const height=count>0?Math.max(8,count/peak*100):2;
+      const description=`${label}：${formatNum(count)}个`;
+      return `<span class="settled-chart-bar${count===0?' is-empty':''}" style="--bar-height:${height.toFixed(2)}%" title="${description}" aria-label="${description}"></span>`;
+    }).join('');
+    const axisLabels=[SETTLED_SIZE_BUCKET_MIN,SETTLED_SIZE_BUCKET_MIN+8,SETTLED_SIZE_BUCKET_MIN+16,SETTLED_SIZE_BUCKET_MIN+24,SETTLED_SIZE_BUCKET_MIN+32,SETTLED_SIZE_BUCKET_MAX]
+      .map((value,index)=>`<span>${index===5?`${value}px+`:`${value}px`}</span>`).join('');
+    const markup=`<div class="settled-chart-meta"><span class="settled-chart-total">总计<b>${formatNum(total)}</b></span><span class="settled-chart-note">每 2px</span></div><div class="settled-chart-plot">${bars}${total<=0?'<span class="settled-chart-empty">暂无兑现</span>':''}</div><div class="settled-chart-axis">${axisLabels}</div>`;
+    const ariaLabel=total<=0?'暂无兑现':`已兑现 ${formatNum(total)} 个小球，按直径每 2px 分区统计`;
+    if(markup!==lastSettledSizeMarkup){lastSettledSizeMarkup=markup;UI.settledSizeText.innerHTML=markup;UI.settledSizeText.setAttribute('aria-label',ariaLabel);}
   }
 
   function updateTopHitDisplays(){
@@ -4737,6 +4757,7 @@
   log('Demo v156 已启动：已兑现小球改为按 12–20、20–30、30–40、40px以上区间统计数量。');
   log('Demo v157 已启动：残余火力不足一格时仍可完成最后一格占领；每淘汰一个阵营，后续弹珠起始数值乘 8。');
   log('Demo v158 已启动：已兑现小球直径统计改为每 2px 一个区间，50px及以上归入末档。');
+  log('Demo v159 已启动：已兑现小球直径区间改为紧凑柱状图，柱高表示各区间数量，悬停可查看精确区间与数量。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
