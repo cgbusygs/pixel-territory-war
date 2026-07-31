@@ -622,9 +622,12 @@
       inset:3
     }),
     orbBulletMomentum:Object.freeze({
-      inheritanceScale:.20,        // 所有“子弹→大球”速度继承缩为 v97 当前公式的 20%
+      inheritanceScale:.20,        // 子弹→大球的基础速度继承缩为 v97 当前公式的 20%
       maxBaseGain:24,              // 缩放前的最大速度增量
-      minBaseGain:1.5              // 缩放前的最小速度增量
+      minBaseGain:1.5,             // 缩放前的最小速度增量
+      referenceRadius:18,          // 参考半径；达到该尺寸后开始明显降低动能继承
+      sizeDampingExponent:.78,     // 半径越大，继承动能按幂函数平滑衰减
+      minSizeDamping:.12            // 即使接近最大直径仍保留少量方向动量
     }),
     cache:Object.freeze({
       impactMaskMaxEntries:128     // 冲击圆遮罩 LRU 上限，防止无限运行时持续增长
@@ -3030,7 +3033,7 @@
     spawnAnnihilationEffects(hit.x,hit.y,a,b,consumed);
   }
 
-  function getOrbBulletMomentumGain(orbValue,bulletValue){
+  function getOrbBulletMomentumGain(orbValue,bulletValue,orbRadius=orbDiameterFromFirepower(orbValue)*.5){
     const safeOrb=Math.max(1,Math.floor(orbValue));
     const safeBullet=Math.max(1,Math.floor(bulletValue));
     const relativeShare=safeBullet/(safeOrb+safeBullet);
@@ -3045,14 +3048,19 @@
         / Math.max(0.9,0.72+orbResistance*0.16)
       )
     );
-    return baseGain*TUNING.orbBulletMomentum.inheritanceScale;
+    // 机枪子弹的动能传入大球后，按大球半径做额外衰减：大球越大，
+    // 同样一发子弹对其整体速度的影响越小；小球保持原有继承强度。
+    const radius=Math.max(1,Number(orbRadius)||1),momentumTuning=TUNING.orbBulletMomentum;
+    const sizeDamping=Math.max(momentumTuning.minSizeDamping,
+      Math.min(1,Math.pow(momentumTuning.referenceRadius/radius,momentumTuning.sizeDampingExponent)));
+    return baseGain*TUNING.orbBulletMomentum.inheritanceScale*sizeDamping;
   }
 
   function inheritBulletMomentumIntoOrb(orb,bullet,interactingValue){
     const speed=Math.hypot(bullet.vx,bullet.vy);
     const value=Math.max(0,Math.floor(interactingValue));
     if(speed<=0||value<=0)return 0;
-    const gain=getOrbBulletMomentumGain(orb.firepower,value);
+    const gain=getOrbBulletMomentumGain(orb.firepower,value,orb.r);
     orb.vx+=(bullet.vx/speed)*gain;
     orb.vy+=(bullet.vy/speed)*gain;
     capBallSpeed(orb,Math.max(280,orb.nominalSpeed||0)+120);
