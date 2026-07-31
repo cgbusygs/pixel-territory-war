@@ -2004,17 +2004,14 @@
   function passBallToLowerRegion(ball){
     ball.zone='lower';
     ball.multRegion=null;
-    // 进入下层后放到挡板下方，确保不会在同一帧被挡板重新顶回去。
-    ball.y=BOARD.lowerTop+ball.r+2;
-    ball.vy=Math.max(95,ball.vy*.68);
   }
 
   function resolveLowerReturnBarrier(ball){
     // 单向挡板只约束已经处于 lower 状态的弹珠；向下穿越时不干预。
     const barrierTop=BOARD.multBottom+ball.r;
-    if(ball.y<barrierTop){
+    if(ball.y<barrierTop&&ball.vy<0){
       ball.y=barrierTop;
-      if(ball.vy<0)ball.vy=Math.abs(ball.vy)*.12;
+      ball.vy=Math.abs(ball.vy)*.12;
     }
   }
 
@@ -2037,7 +2034,8 @@
 
     if(ball.multRegion==='gap'){
       // 中央空隙底部保持开放：能否进入下层完全由可见向上力场与球体尺寸决定。
-      if(ball.y>=BOARD.multBottom-4)passBallToLowerRegion(ball);
+      // 只在向下穿越时切换状态，穿越瞬间不改写坐标和速度。
+      if(ball.y>=BOARD.multBottom-4&&ball.vy>=0)passBallToLowerRegion(ball);
       return;
     }
 
@@ -4654,6 +4652,7 @@
   log('Demo v147 已启动：火力生成矩阵运动速度调整为当前 80%，战场模拟与页面渲染帧率保持不变。');
   log('Demo v148 已启动：乘区底边增加单向挡板；弹珠落入下层后不能再返回上层。');
   log('Demo v149 已启动：中央空隙段挡板改为低透明度柔化显示，碰撞规则保持不变。');
+  log('Demo v150 已启动：弹珠向下穿过中央挡板时保留原始位置与动量，仅拦截下层向上的回穿。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
