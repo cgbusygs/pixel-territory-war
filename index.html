@@ -80,9 +80,9 @@
     .settled-chart-total{color:#dff8ff;font-weight:800;text-shadow:0 0 8px rgba(28,224,255,.24)}
     .settled-chart-total b{font-size:14px;color:#fff;margin-left:4px}
     .settled-chart-note{color:#55dfff;opacity:.78}
-    .settled-chart-plot{height:47px;display:grid;grid-template-columns:repeat(20,minmax(2px,1fr));align-items:end;gap:2px;padding:5px 2px 0;border-bottom:1px solid rgba(47,153,207,.46);background:linear-gradient(180deg,rgba(14,77,108,.15),rgba(3,14,28,.34));position:relative}
+    .settled-chart-plot{height:47px;display:grid;grid-template-columns:repeat(77,minmax(1px,1fr));align-items:end;gap:1px;padding:5px 2px 0;border-bottom:1px solid rgba(47,153,207,.46);background:linear-gradient(180deg,rgba(14,77,108,.15),rgba(3,14,28,.34));position:relative}
     .settled-chart-plot::before{content:"";position:absolute;inset:0 0 1px;background:repeating-linear-gradient(to top,transparent 0 13px,rgba(104,199,230,.09) 13px 14px);pointer-events:none}
-    .settled-chart-bar{position:relative;z-index:1;display:block;min-width:2px;height:var(--bar-height);min-height:2px;background:linear-gradient(180deg,#dffeff 0%,#27dfff 26%,#1679e8 100%);border:1px solid rgba(115,239,255,.68);border-bottom:0;box-shadow:0 0 7px rgba(27,216,255,.35);transition:height .22s ease,filter .18s ease}
+    .settled-chart-bar{position:relative;z-index:1;display:block;min-width:1px;height:var(--bar-height);min-height:2px;background:linear-gradient(180deg,#dffeff 0%,#27dfff 26%,#1679e8 100%);border:1px solid rgba(115,239,255,.68);border-bottom:0;box-shadow:0 0 7px rgba(27,216,255,.35);transition:height .22s ease,filter .18s ease}
     .settled-chart-bar.is-empty{opacity:.24;box-shadow:none}
     .settled-chart-bar:hover{filter:brightness(1.45);box-shadow:0 0 11px rgba(102,239,255,.72)}
     .settled-chart-axis{display:flex;justify-content:space-between;gap:4px;color:#7396ae;font:9px/1 monospace;white-space:nowrap}
@@ -729,15 +729,16 @@
   const eliminationFlash=[0,0,0,0];
   const multiplierDryStreak=new Uint8Array(4);
   const multiplierPityCharges=new Uint8Array(4);
-  // 已兑现弹珠按 2px 直径步长统计；区间左闭右开，50px及以上归入末档。
+  // 已兑现弹珠按 0.5px 直径步长统计；区间左闭右开，50px及以上归入末档。
   const SETTLED_SIZE_BUCKET_MIN=12;
-  const SETTLED_SIZE_BUCKET_STEP=2;
+  const SETTLED_SIZE_BUCKET_STEP=.5;
   const SETTLED_SIZE_BUCKET_MAX=50;
   const SETTLED_SIZE_BUCKET_INTERVAL_COUNT=Math.ceil((SETTLED_SIZE_BUCKET_MAX-SETTLED_SIZE_BUCKET_MIN)/SETTLED_SIZE_BUCKET_STEP);
+  const formatSettledSize=value=>Number.isInteger(value)?String(value):value.toFixed(1);
   const SETTLED_SIZE_BUCKET_LABELS=Object.freeze([
     ...Array.from({length:SETTLED_SIZE_BUCKET_INTERVAL_COUNT},(_,index)=>{
       const start=SETTLED_SIZE_BUCKET_MIN+index*SETTLED_SIZE_BUCKET_STEP;
-      return `${start}–${start+SETTLED_SIZE_BUCKET_STEP}px`;
+      return `${formatSettledSize(start)}–${formatSettledSize(start+SETTLED_SIZE_BUCKET_STEP)}px`;
     }),
     `${SETTLED_SIZE_BUCKET_MAX}px以上`
   ]);
@@ -3696,7 +3697,7 @@
     const diameter=Number.isFinite(ball.r)?Math.max(0,ball.r*2):0;
     if(diameter<=0)return;
     const bucketIndex=Math.max(0,Math.min(SETTLED_SIZE_BUCKET_INTERVAL_COUNT,
-      Math.floor((diameter-SETTLED_SIZE_BUCKET_MIN)/SETTLED_SIZE_BUCKET_STEP)));
+      Math.floor((diameter-SETTLED_SIZE_BUCKET_MIN+1e-9)/SETTLED_SIZE_BUCKET_STEP)));
     settledBallSizeBucketCounts[bucketIndex]++;
   }
 
@@ -3713,8 +3714,8 @@
     }).join('');
     const axisLabels=[SETTLED_SIZE_BUCKET_MIN,SETTLED_SIZE_BUCKET_MIN+8,SETTLED_SIZE_BUCKET_MIN+16,SETTLED_SIZE_BUCKET_MIN+24,SETTLED_SIZE_BUCKET_MIN+32,SETTLED_SIZE_BUCKET_MAX]
       .map((value,index)=>`<span>${index===5?`${value}px+`:`${value}px`}</span>`).join('');
-    const markup=`<div class="settled-chart-meta"><span class="settled-chart-total">总计<b>${formatNum(total)}</b></span><span class="settled-chart-note">每 2px</span></div><div class="settled-chart-plot">${bars}${total<=0?'<span class="settled-chart-empty">暂无兑现</span>':''}</div><div class="settled-chart-axis">${axisLabels}</div>`;
-    const ariaLabel=total<=0?'暂无兑现':`已兑现 ${formatNum(total)} 个小球，按直径每 2px 分区统计`;
+    const markup=`<div class="settled-chart-meta"><span class="settled-chart-total">总计<b>${formatNum(total)}</b></span><span class="settled-chart-note">每 0.5px</span></div><div class="settled-chart-plot">${bars}${total<=0?'<span class="settled-chart-empty">暂无兑现</span>':''}</div><div class="settled-chart-axis">${axisLabels}</div>`;
+    const ariaLabel=total<=0?'暂无兑现':`已兑现 ${formatNum(total)} 个小球，按直径每 0.5px 分区统计`;
     if(markup!==lastSettledSizeMarkup){lastSettledSizeMarkup=markup;UI.settledSizeText.innerHTML=markup;UI.settledSizeText.setAttribute('aria-label',ariaLabel);}
   }
 
@@ -4758,6 +4759,7 @@
   log('Demo v157 已启动：残余火力不足一格时仍可完成最后一格占领；每淘汰一个阵营，后续弹珠起始数值乘 8。');
   log('Demo v158 已启动：已兑现小球直径统计改为每 2px 一个区间，50px及以上归入末档。');
   log('Demo v159 已启动：已兑现小球直径区间改为紧凑柱状图，柱高表示各区间数量，悬停可查看精确区间与数量。');
+  log('Demo v160 已启动：已兑现小球直径统计细化为每 0.5px 一个区间，50px及以上归入末档。');
   log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
   log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
   log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
