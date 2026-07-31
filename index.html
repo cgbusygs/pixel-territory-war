@@ -745,8 +745,9 @@
   const CANNON_BARREL_LENGTH=34;
   const BASE_RING_RADIUS=20;
   const BASE_BODY_RADIUS=56;
-  // 基地外圈的实际视觉半径；此圆以内的方格在开局和重置时直接归属该阵营。
-  const BASE_OUTER_RADIUS=65;
+  // 基地外圈仅负责 HUD 视觉；开局领地半径单独保留，避免 UI 调整改变初始占领面积。
+  const BASE_OUTER_RADIUS=65*.8;
+  const BASE_TERRITORY_RADIUS=65;
   const BASE_AXLE_RADIUS=9;
   const BASE_CORE_HIT_RADIUS=2.6;
   const SHIELD_MIN_RADIUS=68;
@@ -1407,14 +1408,14 @@
   buildRenderCaches();
 
   function seedBaseTerritories(){
-    const radiusSq=BASE_OUTER_RADIUS*BASE_OUTER_RADIUS;
+    const radiusSq=BASE_TERRITORY_RADIUS*BASE_TERRITORY_RADIUS;
     for(let faction=0;faction<FACTIONS.length;faction++){
       const cx=FACTIONS[faction].base[0]*GRID_W;
       const cy=FACTIONS[faction].base[1]*GRID_H;
-      const minX=Math.max(0,Math.floor(cx-BASE_OUTER_RADIUS));
-      const maxX=Math.min(GRID_W-1,Math.ceil(cx+BASE_OUTER_RADIUS));
-      const minY=Math.max(0,Math.floor(cy-BASE_OUTER_RADIUS));
-      const maxY=Math.min(GRID_H-1,Math.ceil(cy+BASE_OUTER_RADIUS));
+      const minX=Math.max(0,Math.floor(cx-BASE_TERRITORY_RADIUS));
+      const maxX=Math.min(GRID_W-1,Math.ceil(cx+BASE_TERRITORY_RADIUS));
+      const minY=Math.max(0,Math.floor(cy-BASE_TERRITORY_RADIUS));
+      const maxY=Math.min(GRID_H-1,Math.ceil(cy+BASE_TERRITORY_RADIUS));
       for(let y=minY;y<=maxY;y++){
         const dy=(y+.5)-cy;
         for(let x=minX;x<=maxX;x++){
@@ -3894,8 +3895,9 @@
     const actualFontSize=fontSize+flash*1.45;
     const font=`800 ${actualFontSize}px "Bahnschrift SemiCondensed","Microsoft YaHei",sans-serif`;
     ctx.save();ctx.font=font;
-    const iconWidth=13,gap=5,textWidth=ctx.measureText(value).width;
-    const groupWidth=iconWidth+gap+textWidth,startX=90-groupWidth*.5;
+    // 两行共用同一组图标列和数值右边界，避免护盾/机枪数值长度不同导致图标左右跳动。
+    const iconWidth=13,gap=5,textWidth=ctx.measureText(value).width,valueSlotWidth=Math.max(54,textWidth+4);
+    const groupWidth=iconWidth+gap+valueSlotWidth,startX=90-groupWidth*.5,valueRight=startX+iconWidth+gap+valueSlotWidth;
     const panelX=startX-7,panelW=groupWidth+14;
     const panel=ctx.createLinearGradient(panelX,y,panelX+panelW,y);
     panel.addColorStop(0,'rgba(1,8,18,.36)');
@@ -3910,10 +3912,10 @@
 
     drawBaseValueIcon(ctx,type,startX+iconWidth*.5,y,color,flash);
     const fill=flash>0?mixHexColors(color,'#ffffff',.72+.22*flash):'#edfaff';
-    drawText(ctx,value,startX+iconWidth+gap,y+.25,{
+    drawText(ctx,value,valueRight,y+.25,{
       fillStyle:fill,
       font,
-      align:'left',
+      align:'right',
       baseline:'middle',
       shadowColor:flash>0?color:'rgba(13,64,92,.48)',
       shadowBlur:flash>0?3+flash*6:1.5
@@ -3931,8 +3933,8 @@
         drawText(ctx,'CORE DESTROYED',90,39,{fillStyle:'rgba(255,210,216,.72)',font:'8px monospace',align:'center',baseline:'middle'});
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:'rgba(160,170,184,.72)',font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }else{
-        drawBaseValueRow(ctx,'shield',formatNum(shieldValue[f]),14,col,shieldGainFlash[f],16);
-        drawBaseValueRow(ctx,'machine',formatMachineFirepower(machineFirepowerPool[f]),42,col,machineGainFlash[f],12);
+        drawBaseValueRow(ctx,'shield',formatNum(shieldValue[f]),16,col,shieldGainFlash[f],16);
+        drawBaseValueRow(ctx,'machine',formatMachineFirepower(machineFirepowerPool[f]),45,col,machineGainFlash[f],12);
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:col,font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }
     }
