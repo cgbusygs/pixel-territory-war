@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v183 · High Quality Renderer</title>
+  <title>像素领土战争 Demo v184 · Accelerated Renderer</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -542,7 +542,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v183</h1>
+        <h1>像素领土战争 · 战场态势 v184</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -3799,8 +3799,8 @@
   }
 
   const VIDEO_PRESETS=Object.freeze({
-    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:40000000,label:'1080P60 HQ'}),
-    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:100000000,label:'4K30 HQ'})
+    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:50000000,avcCodec:'avc1.64002a',label:'1080P60 HQ'}),
+    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:120000000,avcCodec:'avc1.640033',label:'4K30 HQ'})
   });
   const matchVideoCanvas=document.createElement('canvas');
   const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
@@ -3809,7 +3809,7 @@
   let matchRecordingStartWall=0,matchRecordingLastFrame=0,matchRecordingPreset=null,matchRecordingMime='',matchRecordingFileName='';
   let matchRecordingPreparing=false,matchRecordingChunks=[],matchRecordingWriteChain=Promise.resolve(),matchRecordingWriteError=null;
   let matchRecordingFinalReason='手动结束',matchRecordingStatusText='未渲染',matchRecordingNaturalStopTimer=0;
-  let matchVideoRenderActive=false,matchVideoRenderStopRequested=false,matchVideoRenderFrame=0,matchVideoRenderOutput=null;
+  let matchVideoRenderActive=false,matchVideoRenderStopRequested=false,matchVideoRenderFrame=0,matchVideoRenderOutput=null,matchVideoRenderEncoderMode='';
 
   function pickMatchVideoMimeType(){
     if(typeof MediaRecorder==='undefined')return '';
@@ -3830,7 +3830,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v183-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v184-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -3878,32 +3878,40 @@
     matchRecordingPreparing=true;matchRecordingStatusText='准备高质量渲染…';updateMatchRecordingControls();
     let writer=null,fileHandle=null,output=null;
     try{
-      matchRecordingMime='video/webm';
+      const hardwareProbe=await VideoEncoder.isConfigSupported({
+        codec:preset.avcCodec,width:preset.width,height:preset.height,bitrate:preset.bitrate,framerate:preset.fps,
+        hardwareAcceleration:'prefer-hardware',latencyMode:'quality'
+      }).catch(()=>({supported:false}));
+      const useHardwareAvc=hardwareProbe.supported===true;
+      matchRecordingMime=useHardwareAvc?'video/mp4':'video/webm';
+      matchVideoRenderEncoderMode=useHardwareAvc?'H.264 GPU':'VP9 HQ';
       matchRecordingFileName=makeMatchVideoFileName(preset,matchRecordingMime);
       if(VIDEO_RENDER_AUTOMATION&&navigator.storage?.getDirectory){
         const opfsRoot=await navigator.storage.getDirectory();
         fileHandle=await opfsRoot.getFileHandle(matchRecordingFileName,{create:true});
         writer=await fileHandle.createWritable();
       }else if(typeof window.showSaveFilePicker==='function'){
+        const extension=useHardwareAvc?'.mp4':'.webm',mime=useHardwareAvc?'video/mp4':'video/webm';
         fileHandle=await window.showSaveFilePicker({
           suggestedName:matchRecordingFileName,
-          types:[{description:'高质量 WebM 视频',accept:{'video/webm':['.webm']}}]
+          types:[{description:'高质量渲染视频',accept:{[mime]:[extension]}}]
         });
         writer=await fileHandle.createWritable();
       }else return false;
 
-      const {CanvasSource,Output,Quality,StreamTarget,WebMOutputFormat}=await import('./vendor/mediabunny-renderer.mjs');
+      const {CanvasSource,Mp4OutputFormat,Output,Quality,StreamTarget,WebMOutputFormat}=await import('./vendor/mediabunny-renderer.mjs');
       matchVideoCanvas.width=preset.width;matchVideoCanvas.height=preset.height;
       videoRenderSourceHeight=preset.height;resize(true);
       leftStaticCacheDirty=true;leftSemiStaticCacheDirty=true;
       const target=new StreamTarget(writer,{chunked:true,chunkSize:8*1024*1024});
-      output=new Output({format:new WebMOutputFormat(),target});
+      output=new Output({format:useHardwareAvc?new Mp4OutputFormat():new WebMOutputFormat(),target});
       const source=new CanvasSource(matchVideoCanvas,{
-        codec:'vp9',
+        codec:useHardwareAvc?'avc':'vp9',
         quality:new Quality({bitrate:preset.bitrate,bitrateMode:'variable'}),
         keyFrameInterval:2,
         latencyMode:'quality',
-        hardwareAcceleration:'no-preference',
+        hardwareAcceleration:useHardwareAvc?'prefer-hardware':'no-preference',
+        ...(useHardwareAvc?{fullCodecString:preset.avcCodec}:{}),
         contentHint:'detail'
       });
       output.addVideoTrack(source,{frameRate:preset.fps});
@@ -3951,7 +3959,7 @@
         setTimeout(()=>URL.revokeObjectURL(url),30000);
       }
       matchRecordingStatusText=VIDEO_RENDER_AUTOMATION?`已下载 · ${matchRecordingFinalReason}`:`已保存 · ${matchRecordingFinalReason}`;
-      log(`高质量视频已渲染：${matchRecordingFileName}（${matchRecordingFinalReason}）`);
+      log(`高质量视频已渲染：${matchRecordingFileName} · ${matchVideoRenderEncoderMode}（${matchRecordingFinalReason}）`);
       return true;
     }catch(error){
       if(error?.name==='AbortError'){
@@ -4094,6 +4102,7 @@
     recording:!!matchRecorder&&matchRecorder.state!=='inactive',
     rendering:matchVideoRenderActive,
     renderFrame:matchVideoRenderFrame,
+    encoderMode:matchVideoRenderEncoderMode,
     simulationSeconds:simulationElapsed,
     preparing:matchRecordingPreparing,
     resolution:matchRecordingPreset?`${matchRecordingPreset.width}x${matchRecordingPreset.height}`:UI.videoResolution?.value,
@@ -5379,7 +5388,7 @@
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
-  log('Demo v183 已启动：视频输出改为固定模拟帧的高质量 VP9 渲染；1080P 使用 40 Mbps、4K 使用 100 Mbps，并以原生输出高度重绘双画布。');
+  log('Demo v184 已启动：固定帧渲染优先使用 H.264 GPU 编码；1080P 为 50 Mbps、4K 为 120 Mbps，不支持时自动回退 VP9 HQ。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
   if(AUTO_RECORD_AT_LOAD){
     if(speedRange){speedRange.value='1';updateSpeedControl();}
