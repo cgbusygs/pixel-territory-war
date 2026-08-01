@@ -651,8 +651,10 @@
   const LV={w:760,h:960}, WV={w:1000,h:1000};
   // v78：根据设备能力选择桌面或移动端档位，避免移动设备在首帧前被 120Hz 多画布负载阻塞。
   const IS_MOBILE_DEVICE=window.matchMedia?.('(pointer:coarse)').matches||navigator.maxTouchPoints>0||window.innerWidth<=900;
-  const PERF_DEBUG_ACTIVE=new URLSearchParams(location.search).has('perf');
-  const VIDEO_RENDER_AUTOMATION=new URLSearchParams(location.search).has('render');
+  const PAGE_PARAMS=new URLSearchParams(location.search);
+  const PERF_DEBUG_ACTIVE=PAGE_PARAMS.has('perf');
+  const AUTO_RECORD_AT_LOAD=PAGE_PARAMS.has('autoRecord');
+  const VIDEO_RENDER_AUTOMATION=PAGE_PARAMS.has('render')||AUTO_RECORD_AT_LOAD;
   const PERF_PROFILE=IS_MOBILE_DEVICE?{
     name:'Mobile 60FPS Safe',
     simulationHz:60,
@@ -5231,6 +5233,10 @@
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
+  if(AUTO_RECORD_AT_LOAD){
+    if(speedRange){speedRange.value='1';updateSpeedControl();}
+    setTimeout(()=>startMatchRecording(),1200);
+  }
 })();
 </script>
 </body>
