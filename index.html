@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v180 · Matrix Minimal UI</title>
+  <title>像素领土战争 Demo v183 · High Quality Renderer</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -542,7 +542,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v180</h1>
+        <h1>像素领土战争 · 战场态势 v183</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -551,14 +551,14 @@
       <input id="speedRange" class="speed" type="range" min="0.25" max="10" step="0.25" value="1" />
       <span class="badge" id="speedText">1.00×</span>
       <div class="record-controls">
-        <label for="videoResolution">一局录像</label>
-        <select id="videoResolution" aria-label="录像分辨率">
-          <option value="1080">1920 × 1080 · 60 FPS</option>
-          <option value="2160">3840 × 2160 · 30 FPS</option>
+        <label for="videoResolution">高质量渲染</label>
+        <select id="videoResolution" aria-label="渲染分辨率">
+          <option value="1080">1920 × 1080 · 60 FPS · HQ</option>
+          <option value="2160">3840 × 2160 · 30 FPS · HQ</option>
         </select>
-        <button id="recordGameBtn" class="btn record-start">录制一局</button>
-        <button id="stopRecordBtn" class="btn danger" disabled>结束并导出</button>
-        <span class="badge record-status" id="recordStatus">未录制</span>
+        <button id="recordGameBtn" class="btn record-start">渲染一局</button>
+        <button id="stopRecordBtn" class="btn danger" disabled>停止并封装</button>
+        <span class="badge record-status" id="recordStatus">未渲染</span>
       </div>
       <button id="pauseBtn" class="btn">暂停</button>
       <button id="resetBtn" class="btn danger">重置</button>
@@ -655,6 +655,8 @@
   const PERF_DEBUG_ACTIVE=PAGE_PARAMS.has('perf');
   const AUTO_RECORD_AT_LOAD=PAGE_PARAMS.has('autoRecord');
   const VIDEO_RENDER_AUTOMATION=PAGE_PARAMS.has('render')||AUTO_RECORD_AT_LOAD;
+  const VIDEO_RENDER_REQUEST=PAGE_PARAMS.get('render')||'';
+  let videoRenderSourceHeight=VIDEO_RENDER_AUTOMATION&&VIDEO_RENDER_REQUEST.startsWith('2160')?2160:(VIDEO_RENDER_AUTOMATION?1080:0);
   const PERF_PROFILE=IS_MOBILE_DEVICE?{
     name:'Mobile 60FPS Safe',
     simulationHz:60,
@@ -1357,6 +1359,12 @@
   }
 
   function fitCanvas(canvas,w,h){
+    if(videoRenderSourceHeight>0){
+      const height=videoRenderSourceHeight,width=Math.max(1,Math.round(height*w/h));
+      const changed=canvas.width!==width||canvas.height!==height;
+      if(changed){canvas.width=width;canvas.height=height;}
+      return {sx:width/w,sy:height/h,ox:0,oy:0,changed};
+    }
     const dpr=Math.min(MAX_CANVAS_DPR,window.devicePixelRatio||1),r=canvas.getBoundingClientRect();
     const width=Math.max(1,Math.round(r.width*dpr)),height=Math.max(1,Math.round(r.height*dpr));
     const changed=canvas.width!==width||canvas.height!==height;
@@ -1364,6 +1372,12 @@
     return {sx:width/w,sy:height/h,ox:0,oy:0,changed};
   }
   function fitCanvasContained(canvas,w,h){
+    if(videoRenderSourceHeight>0){
+      const height=videoRenderSourceHeight,width=Math.max(1,Math.round(height*w/h));
+      const changed=canvas.width!==width||canvas.height!==height;
+      if(changed){canvas.width=width;canvas.height=height;}
+      return {sx:width/w,sy:height/h,ox:0,oy:0,changed};
+    }
     const dpr=Math.min(MAX_CANVAS_DPR,window.devicePixelRatio||1),r=canvas.getBoundingClientRect();
     const width=Math.max(1,Math.round(r.width*dpr)),height=Math.max(1,Math.round(r.height*dpr));
     const changed=canvas.width!==width||canvas.height!==height;
@@ -3785,8 +3799,8 @@
   }
 
   const VIDEO_PRESETS=Object.freeze({
-    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:14000000,label:'1080P60'}),
-    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:36000000,label:'4K30'})
+    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:40000000,label:'1080P60 HQ'}),
+    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:100000000,label:'4K30 HQ'})
   });
   const matchVideoCanvas=document.createElement('canvas');
   const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
@@ -3794,7 +3808,8 @@
   let matchRecordingAutomationFileHandle=null;
   let matchRecordingStartWall=0,matchRecordingLastFrame=0,matchRecordingPreset=null,matchRecordingMime='',matchRecordingFileName='';
   let matchRecordingPreparing=false,matchRecordingChunks=[],matchRecordingWriteChain=Promise.resolve(),matchRecordingWriteError=null;
-  let matchRecordingFinalReason='手动结束',matchRecordingStatusText='未录制',matchRecordingNaturalStopTimer=0;
+  let matchRecordingFinalReason='手动结束',matchRecordingStatusText='未渲染',matchRecordingNaturalStopTimer=0;
+  let matchVideoRenderActive=false,matchVideoRenderStopRequested=false,matchVideoRenderFrame=0,matchVideoRenderOutput=null;
 
   function pickMatchVideoMimeType(){
     if(typeof MediaRecorder==='undefined')return '';
@@ -3815,17 +3830,20 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v147-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v183-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
-    const active=!!matchRecorder&&matchRecorder.state!=='inactive';
+    const active=matchVideoRenderActive||(!!matchRecorder&&matchRecorder.state!=='inactive');
     if(UI.videoResolution)UI.videoResolution.disabled=active||matchRecordingPreparing;
     if(UI.recordGameBtn)UI.recordGameBtn.disabled=active||matchRecordingPreparing;
     if(UI.stopRecordBtn)UI.stopRecordBtn.disabled=!active;
+    if(UI.speedRange)UI.speedRange.disabled=active||matchRecordingPreparing;
+    if(UI.resetBtn)UI.resetBtn.disabled=active||matchRecordingPreparing;
+    if(UI.pauseBtn)UI.pauseBtn.disabled=active||gameEnded;
     if(UI.recordStatus){
-      const elapsed=active?Math.max(0,(performance.now()-matchRecordingStartWall)/1000):0;
-      UI.recordStatus.textContent=active?`REC ${formatClock(elapsed)} · ${matchRecordingPreset.label}`:matchRecordingStatusText;
+      const elapsed=matchVideoRenderActive?simulationElapsed:(active?Math.max(0,(performance.now()-matchRecordingStartWall)/1000):0);
+      UI.recordStatus.textContent=active?`${matchVideoRenderActive?'RENDER':'REC'} ${formatClock(elapsed)} · ${matchRecordingPreset.label}`:matchRecordingStatusText;
       UI.recordStatus.classList.toggle('recording',active);
     }
   }
@@ -3838,7 +3856,7 @@
     const outerCrop=Math.max(0,(leftW+warW-outputW)/2);
     const leftX=-outerCrop,warX=leftX+leftW-.5;
     ctx.setTransform(1,0,0,1,0,0);
-    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality=VIDEO_RENDER_AUTOMATION?'medium':'high';
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
     ctx.drawImage(leftCanvas,leftX,0,leftW,outputH);
     ctx.drawImage(warCanvas,warX,0,warW+.5,outputH);
     ctx.setTransform(1,0,0,1,0,0);
@@ -3850,6 +3868,105 @@
     if(!matchRecordingLastFrame||now-matchRecordingLastFrame>=frameStep){
       matchRecordingLastFrame=now-(now-matchRecordingLastFrame)%frameStep;
       drawMatchVideoFrame();
+    }
+  }
+
+  async function startHighQualityMatchRender(){
+    if(matchVideoRenderActive||matchRecorder||matchRecordingPreparing)return true;
+    if(typeof VideoEncoder==='undefined')return false;
+    const preset=VIDEO_PRESETS[UI.videoResolution?.value]||VIDEO_PRESETS['1080'];
+    matchRecordingPreparing=true;matchRecordingStatusText='准备高质量渲染…';updateMatchRecordingControls();
+    let writer=null,fileHandle=null,output=null;
+    try{
+      matchRecordingMime='video/webm';
+      matchRecordingFileName=makeMatchVideoFileName(preset,matchRecordingMime);
+      if(VIDEO_RENDER_AUTOMATION&&navigator.storage?.getDirectory){
+        const opfsRoot=await navigator.storage.getDirectory();
+        fileHandle=await opfsRoot.getFileHandle(matchRecordingFileName,{create:true});
+        writer=await fileHandle.createWritable();
+      }else if(typeof window.showSaveFilePicker==='function'){
+        fileHandle=await window.showSaveFilePicker({
+          suggestedName:matchRecordingFileName,
+          types:[{description:'高质量 WebM 视频',accept:{'video/webm':['.webm']}}]
+        });
+        writer=await fileHandle.createWritable();
+      }else return false;
+
+      const {CanvasSource,Output,Quality,StreamTarget,WebMOutputFormat}=await import('./vendor/mediabunny-renderer.mjs');
+      matchVideoCanvas.width=preset.width;matchVideoCanvas.height=preset.height;
+      videoRenderSourceHeight=preset.height;resize(true);
+      leftStaticCacheDirty=true;leftSemiStaticCacheDirty=true;
+      const target=new StreamTarget(writer,{chunked:true,chunkSize:8*1024*1024});
+      output=new Output({format:new WebMOutputFormat(),target});
+      const source=new CanvasSource(matchVideoCanvas,{
+        codec:'vp9',
+        quality:new Quality({bitrate:preset.bitrate,bitrateMode:'variable'}),
+        keyFrameInterval:2,
+        latencyMode:'quality',
+        hardwareAcceleration:'no-preference',
+        contentHint:'detail'
+      });
+      output.addVideoTrack(source,{frameRate:preset.fps});
+      await output.start();
+
+      resetGame();
+      if(speedRange){speedRange.value='1';updateSpeedControl();}
+      paused=true;
+      matchRecordingPreset=preset;matchRecordingStartWall=performance.now();matchRecordingPreparing=false;
+      matchVideoRenderActive=true;matchVideoRenderStopRequested=false;matchVideoRenderFrame=0;matchVideoRenderOutput=output;
+      matchRecordingStatusText='高质量渲染中';updateMatchRecordingControls();
+      const frameDuration=1/preset.fps;
+      const simStepsPerFrame=Math.max(1,Math.round(PERF_PROFILE.simulationHz/preset.fps));
+      const keyFrameStep=preset.fps*2;
+
+      while(!matchVideoRenderStopRequested&&!gameEnded){
+        videoRenderTimelineSeconds=simulationElapsed;
+        drawLeft();drawWar();drawMatchVideoFrame();
+        await source.add(matchVideoRenderFrame*frameDuration,frameDuration,{keyFrame:matchVideoRenderFrame%keyFrameStep===0});
+        matchVideoRenderFrame++;
+        for(let step=0;step<simStepsPerFrame&&!gameEnded;step++)simulateStep(SIM_STEP);
+        if(matchVideoRenderFrame%Math.max(1,Math.round(preset.fps*.25))===0){
+          updateMatchRecordingControls();updateStats();
+          await new Promise(resolve=>setTimeout(resolve,0));
+        }
+      }
+
+      if(gameEnded&&!matchVideoRenderStopRequested){
+        videoRenderTimelineSeconds=simulationElapsed;
+        drawLeft();drawWar();drawMatchVideoFrame();
+        const holdFrames=Math.round(preset.fps*.9);
+        for(let i=0;i<holdFrames;i++){
+          await source.add(matchVideoRenderFrame*frameDuration,frameDuration,{keyFrame:matchVideoRenderFrame%keyFrameStep===0});
+          matchVideoRenderFrame++;
+        }
+      }
+
+      matchRecordingFinalReason=gameEnded&&winnerFaction>=0?`${FACTIONS[winnerFaction].name}获胜`:'手动结束';
+      matchRecordingStatusText='正在封装高质量视频…';updateMatchRecordingControls();
+      await output.finalize();
+      if(VIDEO_RENDER_AUTOMATION&&fileHandle){
+        const file=await fileHandle.getFile();
+        const url=URL.createObjectURL(file),link=document.createElement('a');
+        link.href=url;link.download=matchRecordingFileName;document.body.appendChild(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),30000);
+      }
+      matchRecordingStatusText=VIDEO_RENDER_AUTOMATION?`已下载 · ${matchRecordingFinalReason}`:`已保存 · ${matchRecordingFinalReason}`;
+      log(`高质量视频已渲染：${matchRecordingFileName}（${matchRecordingFinalReason}）`);
+      return true;
+    }catch(error){
+      if(error?.name==='AbortError'){
+        matchRecordingStatusText='已取消';
+      }else{
+        console.error('高质量视频渲染失败：',error);
+        matchRecordingStatusText='渲染失败';log(`高质量视频渲染失败：${error.message||error}`);
+      }
+      try{if(output&&output.state!=='finalized'&&output.state!=='canceled')await output.cancel();else if(writer)await writer.abort();}catch{}
+      return true;
+    }finally{
+      matchVideoRenderActive=false;matchVideoRenderStopRequested=false;matchVideoRenderOutput=null;videoRenderTimelineSeconds=null;
+      matchRecordingPreparing=false;matchRecordingPreset=null;
+      if(!VIDEO_RENDER_AUTOMATION){videoRenderSourceHeight=0;resize(true);}
+      updateMatchRecordingControls();
     }
   }
 
@@ -3888,6 +4005,9 @@
   }
 
   function stopMatchRecording(reason='手动结束'){
+    if(matchVideoRenderActive){
+      matchVideoRenderStopRequested=true;matchRecordingFinalReason=reason;matchRecordingStatusText='正在结束渲染…';updateMatchRecordingControls();return;
+    }
     if(!matchRecorder||matchRecorder.state==='inactive')return;
     matchRecordingFinalReason=reason;matchRecordingStatusText='正在封装…';updateMatchRecordingControls();
     matchRecorder.stop();
@@ -3895,6 +4015,7 @@
 
   async function startMatchRecording(){
     if(matchRecorder||matchRecordingPreparing)return;
+    if(await startHighQualityMatchRender())return;
     if(typeof MediaRecorder==='undefined'||typeof HTMLCanvasElement.prototype.captureStream!=='function'){
       matchRecordingStatusText='浏览器不支持';updateMatchRecordingControls();
       log('当前浏览器不支持 Canvas 视频录制，请使用最新版 Chrome、Edge 或 Safari。');
@@ -3971,6 +4092,9 @@
 
   window.__matchCaptureInfo=()=>({
     recording:!!matchRecorder&&matchRecorder.state!=='inactive',
+    rendering:matchVideoRenderActive,
+    renderFrame:matchVideoRenderFrame,
+    simulationSeconds:simulationElapsed,
     preparing:matchRecordingPreparing,
     resolution:matchRecordingPreset?`${matchRecordingPreset.width}x${matchRecordingPreset.height}`:UI.videoResolution?.value,
     mimeType:matchRecordingMime,
@@ -4399,8 +4523,9 @@
     lctx.setTransform(lscale.sx,0,0,lscale.sy,lscale.ox,lscale.oy);
 
     lctx.globalAlpha=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;lctx.lineWidth=1;lctx.lineCap='butt';lctx.lineJoin='miter';lctx.setLineDash([]);
-    lctx.drawImage(leftStaticCanvas,0,0);
-    lctx.drawImage(leftSemiStaticCanvas,0,0);
+    lctx.imageSmoothingEnabled=true;lctx.imageSmoothingQuality='high';
+    lctx.drawImage(leftStaticCanvas,0,0,LV.w,LV.h);
+    lctx.drawImage(leftSemiStaticCanvas,0,0,LV.w,LV.h);
     drawConverterHighlights();
 
     // v118：只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
@@ -4758,9 +4883,12 @@
     wctx.restore();
   }
 
+  let videoRenderTimelineSeconds=null;
+  function getVisualTimeSeconds(){return videoRenderTimelineSeconds===null?performance.now()/1000:videoRenderTimelineSeconds;}
+
   function drawSniperTargeting(){
     if(sniperAimJobs.length===0)return;
-    const now=performance.now()/1000;
+    const now=getVisualTimeSeconds();
     // 该函数在战场所有元素绘制完成后调用，使用 source-over 让锁定层真正覆盖在画布顶层。
     wctx.save();wctx.globalCompositeOperation='source-over';wctx.lineCap='round';wctx.lineJoin='round';wctx.textAlign='center';wctx.textBaseline='middle';
     for(const job of sniperAimJobs){
@@ -4818,8 +4946,8 @@
 
   function drawWar(){
     wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);wctx.clearRect(0,0,WV.w,WV.h);
-    const t=performance.now()/1000;
-    wctx.drawImage(battleStaticCanvas,0,0);
+    const t=getVisualTimeSeconds();
+    wctx.imageSmoothingEnabled=true;wctx.imageSmoothingQuality='high';wctx.drawImage(battleStaticCanvas,0,0,WV.w,WV.h);
     if(territoryGpuActive)renderTerritoryGpu();
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?territoryGpuCanvas:territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
@@ -5094,6 +5222,7 @@
   }
   function frame(now){
     const elapsed=Math.min(.1,(now-last)/1000);last=now;
+    if(matchVideoRenderActive){requestAnimationFrame(frame);return;}
     const simPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     if(!paused){
       simAccumulator+=elapsed*speed;
@@ -5250,6 +5379,7 @@
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
+  log('Demo v183 已启动：视频输出改为固定模拟帧的高质量 VP9 渲染；1080P 使用 40 Mbps、4K 使用 100 Mbps，并以原生输出高度重绘双画布。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
   if(AUTO_RECORD_AT_LOAD){
     if(speedRange){speedRange.value='1';updateSpeedControl();}

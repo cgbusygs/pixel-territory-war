@@ -1,3 +1,4 @@
 /renders/chrome-background-profile/
 /renders/*.webm
 /renders/*.mp4
+/node_modules/
