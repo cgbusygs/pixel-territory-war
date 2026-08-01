@@ -1,5 +1,6 @@
 param(
-  [int]$Port = 8765
+  [int]$Port = 8765,
+  [int]$DebugPort = 9229
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,6 +37,13 @@ $chromeCandidates = @(
 if (-not $chromeCandidates) { throw 'Chrome was not found.' }
 $chromePath = $chromeCandidates | Select-Object -First 1
 
+$nodeCandidates = @(
+  (Get-Command node.exe -ErrorAction SilentlyContinue).Source,
+  'C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+if (-not $nodeCandidates) { throw 'Node.js was not found; cannot keep the background page active.' }
+$nodePath = $nodeCandidates | Select-Object -First 1
+
 $url = "http://127.0.0.1:$Port/index.html?render=1080p60&autoRecord=1"
 $chromeArgs = @(
   "--user-data-dir=$profileDir",
@@ -44,8 +52,12 @@ $chromeArgs = @(
   '--disable-renderer-backgrounding',
   '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling',
   '--autoplay-policy=no-user-gesture-required',
+  "--remote-debugging-port=$DebugPort",
   '--new-window',
-  $url
+  'about:blank'
 )
 Start-Process -FilePath $chromePath -ArgumentList $chromeArgs | Out-Null
+Start-Sleep -Milliseconds 1000
+$focusHelper = Join-Path $projectRoot 'render-background-focus.mjs'
+Start-Process -WindowStyle Hidden -FilePath $nodePath -ArgumentList @($focusHelper,"$DebugPort",$url) | Out-Null
 Write-Host "Started 1x background 1080p60 recording. Video downloads to $renderDir."
