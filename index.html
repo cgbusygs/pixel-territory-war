@@ -651,9 +651,14 @@
   const LV={w:760,h:960}, WV={w:1000,h:1000};
   // v78：根据设备能力选择桌面或移动端档位，避免移动设备在首帧前被 120Hz 多画布负载阻塞。
   const IS_MOBILE_DEVICE=window.matchMedia?.('(pointer:coarse)').matches||navigator.maxTouchPoints>0||window.innerWidth<=900;
+  const PAGE_PARAMS=new URLSearchParams(location.search);
+  const PERF_DEBUG_ACTIVE=PAGE_PARAMS.has('perf');
+  const AUTO_RECORD_AT_LOAD=PAGE_PARAMS.has('autoRecord');
+  const VIDEO_RENDER_AUTOMATION=PAGE_PARAMS.has('render')||AUTO_RECORD_AT_LOAD;
   const PERF_PROFILE=IS_MOBILE_DEVICE?{
     name:'Mobile 60FPS Safe',
     simulationHz:60,
+    warSimulationHz:60,
     renderHz:60,
     leftRenderHz:60,
     territoryHz:22,
@@ -668,9 +673,10 @@
     overloadMachineGroupSteps:28,
     maxVisualPellets:3
   }:{
-    name:'RTX 120FPS Adaptive',
+    name:'GPU 60FPS Stable',
     simulationHz:120,
-    renderHz:120,
+    warSimulationHz:60,
+    renderHz:60,
     leftRenderHz:60,
     territoryHz:40,
     territoryUploadHz:40,
@@ -866,6 +872,7 @@
   const MAX_CANVAS_DPR=PERF_PROFILE.maxCanvasDpr;
   const TRAIL_SCALE=PERF_PROFILE.trailScale;
   const SIM_STEP=1/PERF_PROFILE.simulationHz;
+  const WAR_SIM_STEP=1/PERF_PROFILE.warSimulationHz;
   const TERRITORY_STEP=1/PERF_PROFILE.territoryHz;
   const TERRITORY_UPLOAD_STEP=1/PERF_PROFILE.territoryUploadHz;
   const TERRITORY_CAPTURE_FIREPOWER_INTERVAL=180;
@@ -2378,9 +2385,8 @@
     for(let i=0;i<substeps;i++)stepBalls(subDt);
   }
 
-  function getBasePos(faction){
-    return {x:FACTIONS[faction].base[0]*WV.w,y:FACTIONS[faction].base[1]*WV.h};
-  }
+  const BASE_POSITIONS=FACTIONS.map(faction=>Object.freeze({x:faction.base[0]*WV.w,y:faction.base[1]*WV.h}));
+  function getBasePos(faction){return BASE_POSITIONS[faction];}
 
   function getCannonMuzzle(faction,angle=cannonAngle[faction]){
     const base=getBasePos(faction);
@@ -2516,6 +2522,16 @@
       return SHIELD_MIN_RADIUS+(SHIELD_INITIAL_RADIUS-SHIELD_MIN_RADIUS)*normalized;
     }
     return SHIELD_INITIAL_RADIUS+Math.log10(value/INITIAL_SHIELD_VALUE)*SHIELD_GROWTH_PER_DECADE;
+  }
+  const shieldRadiusCacheValue=Array(FACTIONS.length).fill(NaN);
+  const shieldRadiusCache=Array(FACTIONS.length).fill(0);
+  function shieldRadiusForFaction(faction){
+    const value=shieldValue[faction];
+    if(shieldRadiusCacheValue[faction]!==value){
+      shieldRadiusCacheValue[faction]=value;
+      shieldRadiusCache[faction]=shieldRadiusPx(value);
+    }
+    return shieldRadiusCache[faction];
   }
 
   function firepowerToVisualPower(firepower){
@@ -2994,7 +3010,7 @@
     for(let f=0;f<FACTIONS.length;f++){
       if(f===attacker || shieldValue[f]<=0) continue;
       const cx=FACTIONS[f].base[0]*WV.w, cy=FACTIONS[f].base[1]*WV.h;
-      const r=shieldRadiusPx(shieldValue[f]);
+      const r=shieldRadiusForFaction(f);
       const hit=distanceToSegment(cx,cy,x1,y1,x2,y2);
       if(hit.dist<=r){
         const offset=Math.sqrt(Math.max(0,r*r-hit.dist*hit.dist));
@@ -3113,7 +3129,7 @@
     for(let f=0;f<FACTIONS.length;f++){
       const bit=1<<f;if(!(p.orbShieldContacts&bit))continue;
       if(shieldValue[f]<=0||eliminated[f]){p.orbShieldContacts&=~bit;continue;}
-      const base=getBasePos(f),radius=shieldRadiusPx(shieldValue[f]);
+      const base=getBasePos(f),radius=shieldRadiusForFaction(f);
       // 实心护盾只有在大球完全离开外边界后才解除接触锁，
       // 防止连续帧在同一覆盖区内重复扣除与反弹。
       if(Math.hypot(p.x-base.x,p.y-base.y)>radius+p.r+ORB_SHIELD_RELEASE_GAP)p.orbShieldContacts&=~bit;
@@ -3123,16 +3139,18 @@
   function getProjectileInteractiveHit(p,x1,y1,x2,y2){
     let best=null;
     if(p.kind==='orb')clearSeparatedOrbShieldContacts(p);
+    const outer=projectileCollisionRadius(p);
     for(let f=0;f<FACTIONS.length;f++){
       if(f===p.faction||eliminated[f])continue;
       const cx=FACTIONS[f].base[0]*WV.w,cy=FACTIONS[f].base[1]*WV.h;
-      const outer=projectileCollisionRadius(p);
       if(shieldValue[f]>0){
         if(p.kind==='orb'&&(p.orbShieldContacts&(1<<f)))continue;
-        const radius=shieldRadiusPx(shieldValue[f]);
+        const radius=shieldRadiusForFaction(f);
+        const hitRadius=radius+outer;
+        if((x1<cx-hitRadius&&x2<cx-hitRadius)||(x1>cx+hitRadius&&x2>cx+hitRadius)||(y1<cy-hitRadius&&y2<cy-hitRadius)||(y1>cy+hitRadius&&y2>cy+hitRadius))continue;
         // v46：护盾为实心圆形碰撞体。弹丸外缘进入覆盖半径即命中；
         // 若护盾扩张后将弹丸包入内部，t=0 会立即结算并将其向外反射或吸收。
-        const t=segmentCircleEntry(x1,y1,x2,y2,cx,cy,radius+outer);
+        const t=segmentCircleEntry(x1,y1,x2,y2,cx,cy,hitRadius);
         if(t===null)continue;
         const hitX=x1+(x2-x1)*t,hitY=y1+(y2-y1)*t;
         let radialNx=hitX-cx,radialNy=hitY-cy,len=Math.hypot(radialNx,radialNy);
@@ -3141,7 +3159,9 @@
         const contactX=cx+radialNx*radius,contactY=cy+radialNy*radius;
         if(!best||t<best.t)best={faction:f,type:'shield',t,x:hitX,y:hitY,contactX,contactY,nx:radialNx,ny:radialNy,radialNx,radialNy,side:1,radius};
       }else{
-        const t=segmentCircleEntry(x1,y1,x2,y2,cx,cy,BASE_CORE_HIT_RADIUS+outer);
+        const hitRadius=BASE_CORE_HIT_RADIUS+outer;
+        if((x1<cx-hitRadius&&x2<cx-hitRadius)||(x1>cx+hitRadius&&x2>cx+hitRadius)||(y1<cy-hitRadius&&y2<cy-hitRadius)||(y1>cy+hitRadius&&y2>cy+hitRadius))continue;
+        const t=segmentCircleEntry(x1,y1,x2,y2,cx,cy,hitRadius);
         if(t===null)continue;
         const hitX=x1+(x2-x1)*t,hitY=y1+(y2-y1)*t;
         if(!best||t<best.t)best={faction:f,type:'core',t,x:hitX,y:hitY,contactX:hitX,contactY:hitY};
@@ -3658,7 +3678,8 @@
     }
     for(const cell of converterCells)cell.highlightStrength=Math.max(0,(cell.highlightStrength||0)-dt*CONVERTER_HIGHLIGHT_FADE);
 
-    // 第一阶段：统一移动。120Hz 固定步进下先完成位置更新，再进行弹丸间对消。
+    // 第一阶段：按独立的战场固定步进统一移动，再进行弹丸间对消。
+    const movePerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     for(const p of projectiles){
       p.dead=false;p.prevX=p.x;p.prevY=p.y;
       if(p.kind==='machine'){
@@ -3674,9 +3695,13 @@
       if(p.kind==='orb')advanceOrbWithWallReflection(p,dt);
       else{p.x+=p.vx*dt;p.y+=p.vy*dt;bounceProjectileOnWalls(p);}
     }
+    if(PERF_DEBUG_ACTIVE)perfWarMoveMs+=performance.now()-movePerfStart;
+    const pairPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     resolveProjectileFirepowerInteractions();
+    if(PERF_DEBUG_ACTIVE)perfWarPairMs+=performance.now()-pairPerfStart;
 
     // 第二阶段：处理火力耗尽、领土染色以及护盾／基底碰撞。
+    const paintPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     for(let i=projectiles.length-1;i>=0;i--){
       const p=projectiles[i];
       if(p.dead||p.firepower<=0){pushTrailSegment(p);releaseProjectile(i);continue;}
@@ -3685,7 +3710,7 @@
       const endX=hit?hit.x:p.x,endY=hit?hit.y:p.y;
       let paintResult=null;
       // 与可交互对象碰撞时立即补算路径，避免低频领土刷新导致穿透后再染色。
-      const foreignTerritoryContact=projectileTouchesForeignTerritory(p,endX,endY);
+      const foreignTerritoryContact=!paintNow&&!hit&&projectileTouchesForeignTerritory(p,endX,endY);
       if(paintNow||hit||foreignTerritoryContact){
         paintResult=paintProjectilePath(p,p.paintX,p.paintY,endX,endY);
         p.paintX=paintResult.x;p.paintY=paintResult.y;
@@ -3706,6 +3731,7 @@
       if(paintNow){p.paintX=p.x;p.paintY=p.y;}
       pushTrailSegment(p);
     }
+    if(PERF_DEBUG_ACTIVE)perfWarPaintMs+=performance.now()-paintPerfStart;
     trailUpdateCarry+=dt;
     if(trailUpdateCarry>=TRAIL_UPDATE_STEP){const trailDt=trailUpdateCarry;trailUpdateCarry%=TRAIL_UPDATE_STEP;renderTrailBatch(trailDt);}
 
@@ -3764,14 +3790,19 @@
   });
   const matchVideoCanvas=document.createElement('canvas');
   const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
-  let matchRecorder=null,matchRecordingStream=null,matchRecordingWriter=null,matchRecordingFrame=0;
+  let matchRecorder=null,matchRecordingStream=null,matchRecordingWriter=null;
+  let matchRecordingAutomationFileHandle=null;
   let matchRecordingStartWall=0,matchRecordingLastFrame=0,matchRecordingPreset=null,matchRecordingMime='',matchRecordingFileName='';
   let matchRecordingPreparing=false,matchRecordingChunks=[],matchRecordingWriteChain=Promise.resolve(),matchRecordingWriteError=null;
   let matchRecordingFinalReason='手动结束',matchRecordingStatusText='未录制',matchRecordingNaturalStopTimer=0;
 
   function pickMatchVideoMimeType(){
     if(typeof MediaRecorder==='undefined')return '';
-    const candidates=[
+    const candidates=VIDEO_RENDER_AUTOMATION?[
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/webm;codecs=vp9'
+    ]:[
       'video/webm;codecs=vp9',
       'video/webm;codecs=vp8',
       'video/webm',
@@ -3807,31 +3838,36 @@
     const outerCrop=Math.max(0,(leftW+warW-outputW)/2);
     const leftX=-outerCrop,warX=leftX+leftW-.5;
     ctx.setTransform(1,0,0,1,0,0);
-    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality=VIDEO_RENDER_AUTOMATION?'medium':'high';
     ctx.drawImage(leftCanvas,leftX,0,leftW,outputH);
     ctx.drawImage(warCanvas,warX,0,warW+.5,outputH);
     ctx.setTransform(1,0,0,1,0,0);
   }
 
-  function runMatchVideoCompositor(now){
+  function updateMatchVideoCompositor(now){
     if(!matchRecorder||matchRecorder.state==='inactive'||!matchRecordingPreset)return;
     const frameStep=1000/matchRecordingPreset.fps;
     if(!matchRecordingLastFrame||now-matchRecordingLastFrame>=frameStep){
       matchRecordingLastFrame=now-(now-matchRecordingLastFrame)%frameStep;
       drawMatchVideoFrame();
     }
-    matchRecordingFrame=requestAnimationFrame(runMatchVideoCompositor);
   }
 
   async function finalizeMatchRecording(){
-    cancelAnimationFrame(matchRecordingFrame);matchRecordingFrame=0;
     if(matchRecordingNaturalStopTimer){clearTimeout(matchRecordingNaturalStopTimer);matchRecordingNaturalStopTimer=0;}
     if(matchRecordingStream){for(const track of matchRecordingStream.getTracks())track.stop();}
     try{
       await matchRecordingWriteChain;
       if(matchRecordingWriteError)throw matchRecordingWriteError;
-      if(matchRecordingWriter)await matchRecordingWriter.close();
-      else if(matchRecordingChunks.length){
+      if(matchRecordingWriter){
+        await matchRecordingWriter.close();
+        if(matchRecordingAutomationFileHandle){
+          const file=await matchRecordingAutomationFileHandle.getFile();
+          const url=URL.createObjectURL(file),link=document.createElement('a');
+          link.href=url;link.download=matchRecordingFileName;document.body.appendChild(link);link.click();link.remove();
+          setTimeout(()=>URL.revokeObjectURL(url),30000);
+        }
+      }else if(matchRecordingChunks.length){
         const blob=new Blob(matchRecordingChunks,{type:matchRecordingMime||'video/webm'});
         const url=URL.createObjectURL(blob),link=document.createElement('a');
         link.href=url;link.download=matchRecordingFileName;document.body.appendChild(link);link.click();link.remove();
@@ -3845,7 +3881,7 @@
       log(`录像导出失败：${error.message||error}`);
       try{if(matchRecordingWriter)await matchRecordingWriter.abort();}catch{}
     }finally{
-      matchRecorder=null;matchRecordingStream=null;matchRecordingWriter=null;matchRecordingPreset=null;
+      matchRecorder=null;matchRecordingStream=null;matchRecordingWriter=null;matchRecordingAutomationFileHandle=null;matchRecordingPreset=null;
       matchRecordingChunks=[];matchRecordingWriteChain=Promise.resolve();matchRecordingWriteError=null;matchRecordingPreparing=false;
       updateMatchRecordingControls();
     }
@@ -3873,7 +3909,17 @@
     let writer=null;
     try{
       matchRecordingFileName=makeMatchVideoFileName(preset,mimeType);
-      if(typeof window.showSaveFilePicker==='function'){
+      if(VIDEO_RENDER_AUTOMATION&&navigator.storage?.getDirectory){
+        try{
+          const opfsRoot=await navigator.storage.getDirectory();
+          matchRecordingAutomationFileHandle=await opfsRoot.getFileHandle(matchRecordingFileName,{create:true});
+          writer=await matchRecordingAutomationFileHandle.createWritable();
+        }catch(error){
+          matchRecordingAutomationFileHandle=null;writer=null;
+          console.warn('自动渲染 OPFS 写入不可用，将回退到内存缓存：',error);
+        }
+      }
+      if(typeof window.showSaveFilePicker==='function'&&!VIDEO_RENDER_AUTOMATION){
         const extension=mimeType.startsWith('video/mp4')?'.mp4':'.webm';
         const handle=await window.showSaveFilePicker({
           suggestedName:matchRecordingFileName,
@@ -3889,7 +3935,8 @@
       matchRecordingFinalReason='手动结束';matchRecordingLastFrame=0;
       drawMatchVideoFrame();
       const stream=matchVideoCanvas.captureStream(preset.fps);
-      const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:preset.bitrate});
+      const videoBitsPerSecond=VIDEO_RENDER_AUTOMATION&&preset.width===1920?8000000:preset.bitrate;
+      const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond});
       matchRecordingStream=stream;matchRecorder=recorder;
       recorder.ondataavailable=event=>{
         if(!event.data||!event.data.size)return;
@@ -3910,7 +3957,6 @@
       recorder.start(1000);
       matchRecordingStartWall=performance.now();matchRecordingPreparing=false;matchRecordingStatusText='录制中';
       updateMatchRecordingControls();
-      matchRecordingFrame=requestAnimationFrame(runMatchVideoCompositor);
       log(`已重置并开始录制一局：${preset.width} × ${preset.height} · ${preset.fps} FPS · ${mimeType}`);
     }catch(error){
       matchRecordingPreparing=false;
@@ -4973,7 +5019,7 @@
     drawWarEffects();
 
     for(let f=0;f<4;f++){
-      const bx=FACTIONS[f].base[0]*WV.w,by=FACTIONS[f].base[1]*WV.h,col=FACTIONS[f].color,physicalRadius=shieldRadiusPx(shieldValue[f]);
+      const bx=FACTIONS[f].base[0]*WV.w,by=FACTIONS[f].base[1]*WV.h,col=FACTIONS[f].color,physicalRadius=shieldRadiusForFaction(f);
       const baseShieldVisual=getBaseShieldVisualStyle(f);
       if(!eliminated[f]&&shieldValue[f]>0){
         drawShieldWithBaseOuterStyle(wctx,bx,by,physicalRadius,baseShieldVisual.color,shieldFlash[f],baseShieldVisual.brightness,t*SHIELD_CLOCKWISE_ROTATION_SPEED);
@@ -5022,19 +5068,33 @@
     if(monochromeHoldSeconds>=MONOCHROME_WIN_SECONDS-1e-9)completeMonochromeVictory(fullFaction);
   }
 
-  let renderAccumulatorMs=0,simAccumulator=0,droppedSimulationTime=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
-  window.__perfDebug=()=>({displayFps,projectiles:projectiles.length,droppedSimulationTime,simAccumulator,territoryGpuActive,territoryDirtyTiles:dirtyTerritoryTileCount});
+  let renderAccumulatorMs=0,simAccumulator=0,warSimulationCarry=0,droppedSimulationTime=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+  let perfSimMs=0,perfBallsMs=0,perfWarSimMs=0,perfWarMoveMs=0,perfWarPairMs=0,perfWarPaintMs=0,perfWarMs=0,perfLeftMs=0,perfFrameSamples=0,perfBallSteps=0,perfSimSteps=0,perfRenderSamples=0;
+  let perfTiming={simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,warMsPerRender:0,leftMsPerRender:0};
+  window.__perfDebug=()=>({displayFps,projectiles:projectiles.length,droppedSimulationTime,simAccumulator,territoryGpuActive,territoryDirtyTiles:dirtyTerritoryTileCount,...perfTiming});
   function simulateStep(dt){
     territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
     simulationElapsed+=dt;
     updateConverterLayout(simulationElapsed);
-    updateBalls(dt*MATRIX_SIMULATION_SPEED_SCALE);updateWar(dt);updateMonochromeVictory(dt);
+    const ballsPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+    updateBalls(dt*MATRIX_SIMULATION_SPEED_SCALE);
+    if(PERF_DEBUG_ACTIVE){perfBallsMs+=performance.now()-ballsPerfStart;perfBallSteps++;}
+    warSimulationCarry+=dt;
+    if(warSimulationCarry>=WAR_SIM_STEP){
+      const warDt=warSimulationCarry;
+      warSimulationCarry%=WAR_SIM_STEP;
+      const warSimPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+      updateWar(warDt);
+      if(PERF_DEBUG_ACTIVE){perfWarSimMs+=performance.now()-warSimPerfStart;perfSimSteps++;}
+    }
+    updateMonochromeVictory(dt);
     hudTextCarry+=dt;
     if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;updateBaseTextCaches();}
   }
   function frame(now){
     const elapsed=Math.min(.1,(now-last)/1000);last=now;
+    const simPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     if(!paused){
       simAccumulator+=elapsed*speed;
       let steps=0;
@@ -5047,14 +5107,38 @@
         simAccumulator=retained;
       }
     }else simAccumulator=0;
+    if(PERF_DEBUG_ACTIVE){perfSimMs+=performance.now()-simPerfStart;perfFrameSamples++;}
     const renderInterval=1000/PERF_PROFILE.renderHz,leftRenderInterval=1000/PERF_PROFILE.leftRenderHz;
     renderAccumulatorMs+=elapsed*1000;leftRenderAccumulatorMs+=elapsed*1000;
     if(renderAccumulatorMs>=renderInterval){
       renderAccumulatorMs%=renderInterval;
-      if(leftRenderAccumulatorMs>=leftRenderInterval){leftRenderAccumulatorMs%=leftRenderInterval;drawLeft();}
+      if(leftRenderAccumulatorMs>=leftRenderInterval){
+        leftRenderAccumulatorMs%=leftRenderInterval;
+        const leftPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+        drawLeft();
+        if(PERF_DEBUG_ACTIVE)perfLeftMs+=performance.now()-leftPerfStart;
+      }
+      const warPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
       drawWar();fpsFrames++;
+      if(PERF_DEBUG_ACTIVE){perfWarMs+=performance.now()-warPerfStart;perfRenderSamples++;}
+      updateMatchVideoCompositor(now);
     }
-    if(now-fpsWindowStart>=500){displayFps=Math.round(fpsFrames*1000/(now-fpsWindowStart));fpsFrames=0;fpsWindowStart=now;}
+    if(now-fpsWindowStart>=500){
+      displayFps=Math.round(fpsFrames*1000/(now-fpsWindowStart));fpsFrames=0;fpsWindowStart=now;
+      if(PERF_DEBUG_ACTIVE){
+        perfTiming={
+          simMsPerFrame:perfSimMs/Math.max(1,perfFrameSamples),
+          ballsMsPerStep:perfBallsMs/Math.max(1,perfBallSteps),
+          warSimMsPerStep:perfWarSimMs/Math.max(1,perfSimSteps),
+          warMoveMsPerStep:perfWarMoveMs/Math.max(1,perfSimSteps),
+          warPairMsPerStep:perfWarPairMs/Math.max(1,perfSimSteps),
+          warPaintMsPerStep:perfWarPaintMs/Math.max(1,perfSimSteps),
+          warMsPerRender:perfWarMs/Math.max(1,perfRenderSamples),
+          leftMsPerRender:perfLeftMs/Math.max(1,perfRenderSamples)
+        };
+        perfSimMs=perfBallsMs=perfWarSimMs=perfWarMoveMs=perfWarPairMs=perfWarPaintMs=perfWarMs=perfLeftMs=0;perfFrameSamples=perfBallSteps=perfSimSteps=perfRenderSamples=0;
+      }
+    }
     if(!bootFrameCompleted){bootFrameCompleted=true;if(bootNotice)bootNotice.classList.add('hidden');}
     requestAnimationFrame(frame);
   }
@@ -5072,7 +5156,7 @@
     previousOrbPairContacts.clear();currentOrbPairContacts.clear();
     resetTopHitCounts();
     buildPegRotors();resetTerritory();initializeFixedBallPool();
-    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;droppedSimulationTime=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
+    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;warSimulationCarry=0;droppedSimulationTime=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
     gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
     if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
     if(UI.feed)UI.feed.innerHTML='';
@@ -5167,6 +5251,10 @@
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
+  if(AUTO_RECORD_AT_LOAD){
+    if(speedRange){speedRange.value='1';updateSpeedControl();}
+    setTimeout(()=>startMatchRecording(),1200);
+  }
 })();
 </script>
 </body>
