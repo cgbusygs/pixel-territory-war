@@ -47,5 +47,5 @@ $chromeArgs = @(
   '--new-window',
   $url
 )
-Start-Process -WindowStyle Hidden -FilePath $chromePath -ArgumentList $chromeArgs | Out-Null
+Start-Process -FilePath $chromePath -ArgumentList $chromeArgs | Out-Null
 Write-Host "Started 1x background 1080p60 recording. Video downloads to $renderDir."
