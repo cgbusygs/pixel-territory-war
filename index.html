@@ -3795,7 +3795,11 @@
 
   function pickMatchVideoMimeType(){
     if(typeof MediaRecorder==='undefined')return '';
-    const candidates=[
+    const candidates=VIDEO_RENDER_AUTOMATION?[
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/webm;codecs=vp9'
+    ]:[
       'video/webm;codecs=vp9',
       'video/webm;codecs=vp8',
       'video/webm',
@@ -3831,7 +3835,7 @@
     const outerCrop=Math.max(0,(leftW+warW-outputW)/2);
     const leftX=-outerCrop,warX=leftX+leftW-.5;
     ctx.setTransform(1,0,0,1,0,0);
-    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality=VIDEO_RENDER_AUTOMATION?'medium':'high';
     ctx.drawImage(leftCanvas,leftX,0,leftW,outputH);
     ctx.drawImage(warCanvas,warX,0,warW+.5,outputH);
     ctx.setTransform(1,0,0,1,0,0);
@@ -3911,7 +3915,8 @@
       matchRecordingFinalReason='手动结束';matchRecordingLastFrame=0;
       drawMatchVideoFrame();
       const stream=matchVideoCanvas.captureStream(preset.fps);
-      const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:preset.bitrate});
+      const videoBitsPerSecond=VIDEO_RENDER_AUTOMATION&&preset.width===1920?8000000:preset.bitrate;
+      const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond});
       matchRecordingStream=stream;matchRecorder=recorder;
       recorder.ondataavailable=event=>{
         if(!event.data||!event.data.size)return;
