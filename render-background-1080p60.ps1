@@ -60,4 +60,4 @@ Start-Process -FilePath $chromePath -ArgumentList $chromeArgs | Out-Null
 Start-Sleep -Milliseconds 1000
 $focusHelper = Join-Path $projectRoot 'render-background-focus.mjs'
 Start-Process -WindowStyle Hidden -FilePath $nodePath -ArgumentList @($focusHelper,"$DebugPort",$url) | Out-Null
-Write-Host "Started 1x background 1080p60 recording. Video downloads to $renderDir."
+Write-Host "Started accelerated deterministic 1x 1080p60 rendering. Video downloads to $renderDir."
