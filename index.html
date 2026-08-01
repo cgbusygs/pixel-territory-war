@@ -652,6 +652,7 @@
   // v78：根据设备能力选择桌面或移动端档位，避免移动设备在首帧前被 120Hz 多画布负载阻塞。
   const IS_MOBILE_DEVICE=window.matchMedia?.('(pointer:coarse)').matches||navigator.maxTouchPoints>0||window.innerWidth<=900;
   const PERF_DEBUG_ACTIVE=new URLSearchParams(location.search).has('perf');
+  const VIDEO_RENDER_AUTOMATION=new URLSearchParams(location.search).has('render');
   const PERF_PROFILE=IS_MOBILE_DEVICE?{
     name:'Mobile 60FPS Safe',
     simulationHz:60,
@@ -3894,7 +3895,7 @@
     let writer=null;
     try{
       matchRecordingFileName=makeMatchVideoFileName(preset,mimeType);
-      if(typeof window.showSaveFilePicker==='function'){
+      if(typeof window.showSaveFilePicker==='function'&&!VIDEO_RENDER_AUTOMATION){
         const extension=mimeType.startsWith('video/mp4')?'.mp4':'.webm';
         const handle=await window.showSaveFilePicker({
           suggestedName:matchRecordingFileName,
