@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "build:video-vendor": "esbuild video-render-vendor-entry.mjs --bundle --minify --format=esm --legal-comments=eof --outfile=vendor/mediabunny-renderer.mjs"
+  },
+  "dependencies": {
+    "mediabunny": "1.52.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}
