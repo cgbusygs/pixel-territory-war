@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v184 · Accelerated Renderer</title>
+  <title>像素领土战争 Demo v208 · Narrow Spawn Band</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -542,7 +542,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v184</h1>
+        <h1>像素领土战争 · 战场态势 v208</h1>
       </div>
     </div>
     <div class="toolbar">
@@ -716,13 +716,33 @@
     }),
     collision:Object.freeze({
       ballHashCell:64,             // 大于当前最大弹珠直径 50px，邻格查询即可覆盖碰撞
-      ballPasses:3,                // 多轮位置修正，降低拥挤区残余重叠
+      solverIterations:5,          // 统一接触求解迭代次数，逐步消除重叠而非瞬间弹开
       maxSubsteps:4,               // 移动端或高速状态下增加物理微步，避免穿透
       maxTravelPerStep:5,          // 单微步最大位移，低于最小弹珠半径
-      energyRetention:.90,         // 低速弹珠互撞与转盘点碰撞统一保留 90% 可耗散动能
-      speedResponseReference:600,  // 超过该合速度后，碰撞恢复系数开始随速度衰减
-      speedResponseExponent:.75,   // 高速碰撞恢复系数的衰减曲线
-      speedResponseFloor:.35       // 高速碰撞仍保留的最小恢复比例
+      energyRetention:.90,         // 强碰撞的法向相对动能最多保留 90%
+      bounceThreshold:55,          // 低于此接触速度不反弹，避免轻质微抖
+      fullRestitutionSpeed:360,    // 达到此速度后才使用完整恢复系数
+      penetrationSlop:.025,        // 允许极小接触误差，防止静止接触持续抖动
+      positionCorrection:.58,      // 每轮仅修正部分穿透，形成更扎实的接触过程
+      speedResponseReference:600,  // 超过该相对速度后，转盘有限驱动力继续衰减
+      speedResponseExponent:.75,   // 高速转盘驱动力的衰减曲线
+      speedResponseFloor:.35,      // 高速仍保留的最低驱动力比例
+      massExponent:3,              // 按球体体积映射惯性，大球不再使用偏轻的二维面积质量
+      rotationalInertiaFactor:.4,  // 实心球转动惯量 I = 2/5·m·r²
+      ballFriction:.22,            // 弹珠互撞的切向摩擦
+      surfaceFriction:.30,         // 墙体、挡板和碰撞点的切向摩擦
+      spinDamping:.22,             // 仅抑制无限累积的自转，不影响法线反弹
+      maxSpin:52,                  // 限制极端拥挤状态下的角速度
+      rotorEffectiveRadius:12,     // 转盘碰撞点的等效驱动质量参考半径
+      rotorMassMultiplier:2.8,     // 转盘保持固定轨迹，但输出冲量具有有限质量
+      rotorMomentumTransferScale:1.4, // 转盘法向冲量统一提升至当前的 140%
+      rotorTrailDuration:.18,      // 外圈碰撞点拖尾保留的模拟时长
+      rotorTrailMaxPoints:12,      // 拖尾最多保留的轨迹采样点
+      rotorTrailMinDistance:2.8,   // 小于此位移不新增采样，避免重复线段
+      airDragLinear:.015,          // 所有弹珠共有的轻微基础空气阻力
+      airDragQuadratic:.00028,      // 速度平方阻力系数；通过参考速度归一化保持量级
+      airDragReferenceSpeed:600,   // 平方阻力与旧线性速度项的量级对齐基准
+      airDragMaxRate:1.25          // 极端速度下限制每秒阻尼率，避免瞬间刹停
     }),
     multiplierEntry:Object.freeze({
       largeDiameterToOpening:.72,  // 弹珠直径达到入口有效宽度此比例后，视为较大弹珠
@@ -730,7 +750,8 @@
       maxVerticalSpeed:155,        // 卡住判定允许的最大纵向速度
       maxHorizontalSpeed:190,      // 卡住判定允许的最大横向速度
       kickBaseSpeed:300,           // 脱困向上冲量的基础速度
-      kickPerRadius:8,             // 半径越大，脱困冲量越强
+      kickPerRadius:20,            // 半径越大，脱困冲量越强
+      centerAttraction:480,        // 入口卡住时指向当前倍率格中心的回复加速度
       kickCooldown:.72             // 防止同一弹珠连续触发冲量
     }),
     converter:Object.freeze({
@@ -1212,6 +1233,17 @@
   const BOARD={spawnY:68,upperTop:108,upperBottom:358,multTop:388,multBottom:468,lowerTop:500,lowerBottom:758,convertTop:798,convertBottom:934};
   const PLAYFIELD={left:24,right:LV.w-24};
   PLAYFIELD.width=PLAYFIELD.right-PLAYFIELD.left;
+  const SPAWN_INSET=14;
+  const SPAWN_WIDTH_RATIO=.70;
+  function getSpawnBounds(radius=0){
+    const centerX=(PLAYFIELD.left+PLAYFIELD.right)*.5;
+    const usableWidth=Math.max(1,PLAYFIELD.width-SPAWN_INSET*2);
+    const halfWidth=usableWidth*SPAWN_WIDTH_RATIO*.5;
+    const safeRadius=Math.max(0,Number(radius)||0);
+    const minX=Math.max(PLAYFIELD.left+safeRadius,centerX-halfWidth);
+    const maxX=Math.min(PLAYFIELD.right-safeRadius,centerX+halfWidth);
+    return minX<=maxX?{minX,maxX}:{minX:centerX,maxX:centerX};
+  }
   const MATRIX_TOP_WALL_Y=24;
   const MATRIX_BOTTOM_WALL_Y=Math.min(LV.h-16,BOARD.convertBottom+10);
   const MULT_SEPARATOR_HALF_WIDTH=8;
@@ -1232,7 +1264,7 @@
   const GAP_FIELD_MAX_DIAMETER=BALL_RADIUS_MAX*2;
 
   // 力场入口防堆积。
-  const GAP_FIELD_GRAVITY_REFERENCE=680;
+  const GAP_FIELD_GRAVITY_REFERENCE=750;
   const GAP_FIELD_ENTRY_BAND_ABOVE=72;
   const GAP_FIELD_ENTRY_BAND_BELOW=52;
   const GAP_FIELD_STALL_SPEED_Y=190;
@@ -1247,16 +1279,14 @@
   const PEG_DISC_POINT_RADIUS=4.1;
   // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值；当前转速为原设定的 80%。
   const PEG_DISC_ORBIT_RADIUS=123.552;
-  const PEG_DISC_SPIN_SPEED=2.52;
-  const MATRIX_SIMULATION_SPEED_SCALE=.8;
-  // v111：左右侧壁施加对称的向内冲量，避免所有弹珠持续堆向左侧。
-  const MATRIX_SIDE_WALL_KICK_MULT=1.25;
-  const MATRIX_SIDE_WALL_COOLDOWN=0.12;
-  const MATRIX_SIDE_WALL_RELEASE=18;
-  // v74：侧壁反弹后的合速度上限，接近小球从矩阵顶部自然下落到底部的速度量级。
+  // v191：转盘角速度提升至 v190 的 130%，帧率与矩阵整体时间倍率保持不变。
+  const PEG_DISC_SPIN_SPEED=3.276;
+  // v186：在 v147 的 80% 基础上再降至当前的 80%，即原始矩阵速度的 64%。
+  const MATRIX_SIMULATION_SPEED_SCALE=.64;
+  // v202：两侧墙壁仅保留被动边界碰撞，不再对贴墙弹珠额外施加向内冲量。
   const MATRIX_SIDE_WALL_MAX_SPEED=980;
 
-  function updateRotorPegPositions(rotor){
+  function updateRotorPegPositions(rotor,dt=0){
     for(const peg of rotor.pegs){
       if(peg.isCenter){
         peg.x=rotor.cx; peg.y=rotor.cy;
@@ -1266,15 +1296,26 @@
         peg.y=rotor.cy+Math.sin(a)*rotor.orbitRadius;
       }
     }
+    if(dt<=0)return;
+    for(const peg of rotor.pegs){
+      if(peg.isCenter)continue;
+      const trail=Array.isArray(peg.trail)?peg.trail:(peg.trail=[]);
+      for(const point of trail)point.age+=dt;
+      const head=trail[0];
+      if(!head||Math.hypot(peg.x-head.x,peg.y-head.y)>=TUNING.collision.rotorTrailMinDistance){
+        trail.unshift({x:peg.x,y:peg.y,age:0});
+      }
+      while(trail.length>TUNING.collision.rotorTrailMaxPoints||trail.length&&trail[trail.length-1].age>TUNING.collision.rotorTrailDuration)trail.pop();
+    }
   }
 
   function createPegRotor(targetRotors,targetPegs,cx,cy,spinDir,startAngle=0){
     const baseAngularSpeed=PEG_DISC_SPIN_SPEED*spinDir;
     const rotor={cx,cy,orbitRadius:PEG_DISC_ORBIT_RADIUS,angle:startAngle,angularSpeed:baseAngularSpeed,baseAngularSpeed,spinDir,pegs:[]};
-    const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0,rotor};
+    const centerPeg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:true,phase:0,rotor,contactId:targetPegs.length};
     rotor.pegs.push(centerPeg); targetPegs.push(centerPeg);
     for(let i=0;i<6;i++){
-      const peg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:false,phase:i*TAU/6,rotor};
+      const peg={x:cx,y:cy,r:PEG_DISC_POINT_RADIUS,isCenter:false,phase:i*TAU/6,rotor,contactId:targetPegs.length,trail:[]};
       rotor.pegs.push(peg); targetPegs.push(peg);
     }
     updateRotorPegPositions(rotor);
@@ -1297,11 +1338,11 @@
   function updatePegRotors(dt){
     for(const rotor of upperRotors){
       rotor.angularSpeed=rotor.baseAngularSpeed;
-      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor);
+      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor,dt);
     }
     for(const rotor of lowerRotors){
       rotor.angularSpeed=rotor.baseAngularSpeed;
-      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor);
+      rotor.angle=normalizeAngle(rotor.angle+rotor.baseAngularSpeed*dt);updateRotorPegPositions(rotor,dt);
     }
   }
 
@@ -1448,7 +1489,8 @@
     const ctx=leftSemiStaticCtx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,LV.w,LV.h);
     // v182：移除左侧 01—05 阶段条、重复区域外框，仅保留一条弱化的生成基准线。
     ctx.save();ctx.setLineDash([10,10]);ctx.strokeStyle='rgba(70,194,218,.34)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(PLAYFIELD.left,BOARD.spawnY);ctx.lineTo(PLAYFIELD.right,BOARD.spawnY);ctx.stroke();ctx.restore();
+    const spawnBounds=getSpawnBounds();
+    ctx.beginPath();ctx.moveTo(spawnBounds.minX,BOARD.spawnY);ctx.lineTo(spawnBounds.maxX,BOARD.spawnY);ctx.stroke();ctx.restore();
     ctx.save();
     const wallTop=MATRIX_TOP_WALL_Y,wallBottom=MATRIX_BOTTOM_WALL_Y;
     const wallGrad=ctx.createLinearGradient(0,wallTop,0,wallBottom);
@@ -1689,29 +1731,29 @@
     return Number(n).toFixed(1);
   }
   const BASE_BALL_VALUE=2;
-  function chooseValue(){return BASE_BALL_VALUE;}
+  const BASE_VALUE_GROWTH_INTERVAL=120;
+  function getBaseValueMultiplier(){
+    return Math.pow(2,Math.floor(Math.max(0,simulationElapsed)/BASE_VALUE_GROWTH_INTERVAL));
+  }
+  function chooseValue(){return BASE_BALL_VALUE*getBaseValueMultiplier();}
   function getBallStartValue(){return chooseValue()*factionStartValueMultiplier;}
   function radiusFromValue(value){
     const safeValue=Number.isFinite(value)?Math.max(BASE_BALL_VALUE,value):Number.MAX_VALUE;
-    const currentMinutes=Math.max(0,simulationElapsed/60);
-    // v94：将次方数按【次方数 - 当前分钟数/2】处理。
-    // 由于当前基础式为 radius = 6 + (log2(value/2))，因此等价于从翻倍层级中减去当前分钟数的一半。
-    const doublingLevels=Math.max(0,Math.log2(safeValue/BASE_BALL_VALUE)-currentMinutes*.5);
+    const decayIntervals=Math.max(0,simulationElapsed/45);
+    // v198：每 45 秒衰减 0.5px 半径（即直径减少 1px）。
+    const doublingLevels=Math.max(0,Math.log2(safeValue/BASE_BALL_VALUE)-decayIntervals*.5);
     return Math.min(BALL_RADIUS_MAX,BALL_RADIUS_BASE+doublingLevels*BALL_RADIUS_PER_DOUBLING);
   }
 
   const BALLS_PER_FACTION=3;
-  const SPAWN_INSET=14;
 
   function randomSpawnX(){
-    const minX=PLAYFIELD.left+SPAWN_INSET;
-    const maxX=PLAYFIELD.right-SPAWN_INSET;
+    const {minX,maxX}=getSpawnBounds();
     return minX+Math.random()*(maxX-minX);
   }
 
   function findClearSpawnX(ball,preferredX){
-    const minX=PLAYFIELD.left+ball.r;
-    const maxX=PLAYFIELD.right-ball.r;
+    const {minX,maxX}=getSpawnBounds(ball.r);
     const span=Math.max(1,maxX-minX);
     let bestX=Math.max(minX,Math.min(maxX,preferredX));
     let bestClearance=-Infinity;
@@ -1742,7 +1784,9 @@
     }
     ball.r=radiusFromValue(ball.value);
     const offsetRangeEl=UI.offsetRange;
-    const controlledOffset=useControls&&offsetRangeEl?Number(offsetRangeEl.value)/100*(LV.w*.20):0;
+    const spawnBounds=getSpawnBounds(ball.r);
+    const spawnSpan=Math.max(1,spawnBounds.maxX-spawnBounds.minX);
+    const controlledOffset=useControls&&offsetRangeEl?Number(offsetRangeEl.value)/100*(spawnSpan*.20):0;
     const randomX=xOverride!==null?xOverride:randomSpawnX()+controlledOffset;
     ball.x=findClearSpawnX(ball,randomX);
     const driftRangeEl=UI.driftRange;
@@ -1750,6 +1794,7 @@
     ball.y=BOARD.spawnY-(Math.random()*8);
     ball.vx=(useControls?controlledDrift:(Math.random()-.5)*62)+(Math.random()-.5)*10;
     ball.vy=14+Math.random()*12;
+    ball.angularVelocity=0;
     if(returnKick){
       // 回到顶部生成区后额外施加一次随机冲量，减少重复落点与轨迹。
       ball.vx+=(Math.random()-.5)*450;
@@ -1758,8 +1803,6 @@
     ball.zone='upper';
     ball.multRegion=null;
     ball.convertRegion=null;
-    ball.sideWallKickCooldown=0;
-    ball.sideWallSide='';
     ball.gapStallTime=0;
     ball.gapEjectDirection=0;
     ball.multiplierEntryStallTime=0;
@@ -1771,7 +1814,7 @@
 
   function createFixedBall(faction,slot,delayOverride=null){
     const startValue=getBallStartValue();
-    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,sideWallKickCooldown:0,sideWallSide:'',gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
+    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,angularVelocity:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
     balls.push(ball);
     resetBallToTop(ball,{keepValue:true,delay:delayOverride===null?faction*.08+slot*.16:delayOverride});
   }
@@ -1797,96 +1840,154 @@
     log(`${FACTIONS[selectedFaction].name}的 ${selected.length} 枚弹珠已重新投放`,selectedFaction);
   }
 
-  function collidePeg(b,p,speedRetention=MARBLE_COLLISION_SPEED_RETAIN){
-    const dx=b.x-p.x,dy=b.y-p.y,dist=Math.hypot(dx,dy),min=b.r+p.r;
-    if(dist<min&&dist>0.001){
-      const nx=dx/dist,ny=dy/dist;
-      b.x=p.x+nx*min;b.y=p.y+ny*min;
-      const rotor=p.rotor;
-      if(rotor&&!p.isCenter){
-        const rx=p.x-rotor.cx,ry=p.y-rotor.cy;
-        const angularSpeed=rotor.baseAngularSpeed;
-        const pegVx=-angularSpeed*ry,pegVy=angularSpeed*rx;
-        const relativeNormal=(b.vx-pegVx)*nx+(b.vy-pegVy)*ny;
-        if(relativeNormal>=0)return;
-        const relativeSpeed=Math.hypot(b.vx-pegVx,b.vy-pegVy);
-        const effectiveRetention=speedRetention*getCollisionSpeedResponse(relativeSpeed);
-        const relativeBounce=-(1+effectiveRetention)*relativeNormal;
-        b.vx+=relativeBounce*nx;b.vy+=relativeBounce*ny;
-      }else{
-        const dot=b.vx*nx+b.vy*ny;
-        if(dot>=0)return;
-        const effectiveRetention=speedRetention*getCollisionSpeedResponse(Math.hypot(b.vx,b.vy));
-        b.vx-=dot*(1+effectiveRetention)*nx;
-        b.vy-=dot*(1+effectiveRetention)*ny;
-      }
-    }
+  function getImpactRestitution(impactSpeed,requested=MARBLE_COLLISION_SPEED_RETAIN){
+    const start=TUNING.collision.bounceThreshold,end=Math.max(start+1,TUNING.collision.fullRestitutionSpeed);
+    const x=Math.max(0,Math.min(1,(impactSpeed-start)/(end-start)));
+    const ramp=x*x*(3-2*x);
+    return Math.max(0,Math.min(MARBLE_COLLISION_SPEED_RETAIN,requested))*ramp;
   }
 
-  function collideBallPair(a,b){
-    if(a.respawnDelay>0||b.respawnDelay>0)return;
-    // 不允许隔着倍率盒或火力转换盒侧壁发生弹珠碰撞。
-    if(a.zone==='multiplier'&&b.zone==='multiplier'&&a.multRegion!==b.multRegion)return;
-    if(a.zone==='convert'&&b.zone==='convert'&&a.convertRegion!==b.convertRegion)return;
-    const dx=b.x-a.x,dy=b.y-a.y;
-    const minDist=a.r+b.r;
-    const distSq=dx*dx+dy*dy;
-    if(distSq>=minDist*minDist)return;
-    let dist,nx,ny;
-    if(distSq<=0.0001){
-      // 完全同心时也必须拆开；使用球身份生成稳定法线，避免随机抖动。
-      const seed=(a.faction*17+a.slot*31+b.faction*47+b.slot*59+1)%360;
-      const angle=seed*Math.PI/180;
-      nx=Math.cos(angle);ny=Math.sin(angle);dist=0;
-    }else{
-      dist=Math.sqrt(distSq);
-      nx=dx/dist;ny=dy/dist;
-    }
-    const overlap=minDist-dist;
-    const massA=a.r*a.r,massB=b.r*b.r,totalMass=massA+massB;
-    a.x-=nx*overlap*(massB/totalMass);
-    a.y-=ny*overlap*(massB/totalMass);
-    b.x+=nx*overlap*(massA/totalMass);
-    b.y+=ny*overlap*(massA/totalMass);
-    const rvx=b.vx-a.vx,rvy=b.vy-a.vy;
+  function capMarbleSpin(ball){
+    const omega=Number.isFinite(ball.angularVelocity)?ball.angularVelocity:0;
+    ball.angularVelocity=Math.max(-TUNING.collision.maxSpin,Math.min(TUNING.collision.maxSpin,omega));
+  }
+
+  function solveBallSurfaceContact(ball,nx,ny,penetration,options={},applyVelocity=true){
+    if(!(penetration>0))return false;
+    const correction=Math.max(0,penetration-TUNING.collision.penetrationSlop)*TUNING.collision.positionCorrection;
+    if(correction>0){ball.x+=nx*correction;ball.y+=ny*correction;}
+    if(!applyVelocity)return true;
+
+    const surfaceVx=options.surfaceVx||0,surfaceVy=options.surfaceVy||0;
+    const rvx=ball.vx-surfaceVx,rvy=ball.vy-surfaceVy;
     const normalVelocity=rvx*nx+rvy*ny;
-    if(normalVelocity>=0)return;
+    if(normalVelocity>=0)return true;
 
-    const restitution=MARBLE_COLLISION_SPEED_RETAIN*getCollisionSpeedResponse(Math.hypot(rvx,rvy));
-    const impulse=-(1+restitution)*normalVelocity/(1/massA+1/massB);
-    const ix=impulse*nx,iy=impulse*ny;
-    a.vx-=ix/massA;a.vy-=iy/massA;
-    b.vx+=ix/massB;b.vy+=iy/massB;
+    const mass=getMarbleCollisionMass(ball),invMass=1/mass;
+    const surfaceMass=Number.isFinite(options.surfaceMass)&&options.surfaceMass>0?options.surfaceMass:Infinity;
+    const invSurface=Number.isFinite(surfaceMass)?1/surfaceMass:0;
+    const restitution=getImpactRestitution(-normalVelocity,options.restitution);
+    const impulseScale=Number.isFinite(options.impulseScale)?Math.max(0,options.impulseScale):1;
+    const normalImpulse=-(1+restitution)*normalVelocity/Math.max(1e-9,invMass+invSurface)*impulseScale;
+    ball.vx+=normalImpulse*invMass*nx;ball.vy+=normalImpulse*invMass*ny;
+
+    const tx=-ny,ty=nx;
+    const inertia=getMarbleMomentOfInertia(ball,mass),omega=Number.isFinite(ball.angularVelocity)?ball.angularVelocity:0;
+    const tangentVelocity=(ball.vx-surfaceVx)*tx+(ball.vy-surfaceVy)*ty-omega*ball.r;
+    const tangentDenominator=invMass+invSurface+(ball.r*ball.r)/inertia;
+    if(Math.abs(tangentVelocity)>1e-6&&tangentDenominator>0){
+      const friction=Number.isFinite(options.friction)?options.friction:TUNING.collision.surfaceFriction;
+      const limit=Math.abs(normalImpulse)*Math.max(0,friction);
+      const tangentImpulse=Math.max(-limit,Math.min(limit,-tangentVelocity/tangentDenominator));
+      ball.vx+=tangentImpulse*invMass*tx;ball.vy+=tangentImpulse*invMass*ty;
+      ball.angularVelocity=omega-ball.r*tangentImpulse/inertia;
+      capMarbleSpin(ball);
+    }
+    return true;
   }
 
-  function resolveBallCollisions(){
-    for(let pass=0;pass<TUNING.collision.ballPasses;pass++){
-      for(const bucketIndex of activeBallBuckets)ballCollisionBuckets[bucketIndex].length=0;
-      activeBallBuckets.length=0;
+  function solveBallCircleContact(ball,circle,applyVelocity=true){
+    let dx=ball.x-circle.x,dy=ball.y-circle.y,dist=Math.hypot(dx,dy);
+    const minDistance=ball.r+circle.r;
+    if(dist>=minDistance)return false;
+    let nx,ny;
+    if(dist<1e-6){
+      const seed=(ball.faction*37+ball.slot*61+(circle.contactId||0)*17+1)%360;
+      const angle=seed*Math.PI/180;nx=Math.cos(angle);ny=Math.sin(angle);dist=0;
+    }else{nx=dx/dist;ny=dy/dist;}
 
-      for(let i=0;i<balls.length;i++){
-        const b=balls[i];if(b.respawnDelay>0)continue;
-        const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(b.x/BALL_HASH_CELL)));
-        const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(b.y/BALL_HASH_CELL)));
-        const bucketIndex=cy*BALL_HASH_COLS+cx,bucket=ballCollisionBuckets[bucketIndex];
-        if(bucket.length===0)activeBallBuckets.push(bucketIndex);
-        bucket.push(i);
-      }
+    let surfaceVx=0,surfaceVy=0,surfaceMass=Infinity,impulseScale=1;
+    if(circle.rotor&&!circle.isCenter){
+      const rx=circle.x-circle.rotor.cx,ry=circle.y-circle.rotor.cy;
+      surfaceVx=-circle.rotor.baseAngularSpeed*ry;
+      surfaceVy=circle.rotor.baseAngularSpeed*rx;
+      const relativeSpeed=Math.hypot(ball.vx-surfaceVx,ball.vy-surfaceVy);
+      const driveResponse=getCollisionSpeedResponse(relativeSpeed);
+      surfaceMass=Math.pow(TUNING.collision.rotorEffectiveRadius,TUNING.collision.massExponent)
+        *TUNING.collision.rotorMassMultiplier*driveResponse;
+      impulseScale=TUNING.collision.rotorMomentumTransferScale;
+    }
+    return solveBallSurfaceContact(ball,nx,ny,minDistance-dist,{
+      surfaceVx,surfaceVy,surfaceMass,
+      restitution:MARBLE_COLLISION_SPEED_RETAIN,
+      friction:TUNING.collision.surfaceFriction,
+      impulseScale
+    },applyVelocity);
+  }
 
-      for(let i=0;i<balls.length;i++){
-        const b=balls[i];if(b.respawnDelay>0)continue;
-        const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(b.x/BALL_HASH_CELL)));
-        const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(b.y/BALL_HASH_CELL)));
-        const range=Math.max(1,Math.ceil((b.r+BALL_RADIUS_MAX)/BALL_HASH_CELL));
-        for(let oy=-range;oy<=range;oy++){
-          const ny=cy+oy;if(ny<0||ny>=BALL_HASH_ROWS)continue;
-          for(let ox=-range;ox<=range;ox++){
-            const nx=cx+ox;if(nx<0||nx>=BALL_HASH_COLS)continue;
-            const bucket=ballCollisionBuckets[ny*BALL_HASH_COLS+nx];
-            for(let k=0;k<bucket.length;k++){
-              const j=bucket[k];if(j<=i)continue;
-              collideBallPair(b,balls[j]);
-            }
+  function solveBallPairContact(a,b,applyVelocity=true){
+    if(a.respawnDelay>0||b.respawnDelay>0)return false;
+    // 不允许隔着倍率盒或火力转换盒侧壁发生弹珠碰撞。
+    if(a.zone==='multiplier'&&b.zone==='multiplier'&&a.multRegion!==b.multRegion)return false;
+    if(a.zone==='convert'&&b.zone==='convert'&&a.convertRegion!==b.convertRegion)return false;
+    let dx=b.x-a.x,dy=b.y-a.y,distSq=dx*dx+dy*dy;
+    const minDistance=a.r+b.r;
+    if(distSq>=minDistance*minDistance)return false;
+    let dist,nx,ny;
+    if(distSq<=1e-8){
+      const seed=(a.faction*17+a.slot*31+b.faction*47+b.slot*59+1)%360;
+      const angle=seed*Math.PI/180;nx=Math.cos(angle);ny=Math.sin(angle);dist=0;
+    }else{dist=Math.sqrt(distSq);nx=dx/dist;ny=dy/dist;}
+
+    const massA=getMarbleCollisionMass(a),massB=getMarbleCollisionMass(b);
+    const invA=1/massA,invB=1/massB,invTotal=invA+invB;
+    const correction=Math.max(0,minDistance-dist-TUNING.collision.penetrationSlop)*TUNING.collision.positionCorrection;
+    if(correction>0&&invTotal>0){
+      const moveA=correction*invA/invTotal,moveB=correction*invB/invTotal;
+      a.x-=nx*moveA;a.y-=ny*moveA;b.x+=nx*moveB;b.y+=ny*moveB;
+    }
+    if(!applyVelocity)return true;
+
+    const rvx=b.vx-a.vx,rvy=b.vy-a.vy,normalVelocity=rvx*nx+rvy*ny;
+    if(normalVelocity>=0)return true;
+    const impactSpeed=-normalVelocity;
+    const restitution=getImpactRestitution(impactSpeed,MARBLE_COLLISION_SPEED_RETAIN);
+    const normalImpulse=-(1+restitution)*normalVelocity/Math.max(1e-9,invTotal);
+    const normalX=normalImpulse*nx,normalY=normalImpulse*ny;
+    a.vx-=normalX*invA;a.vy-=normalY*invA;b.vx+=normalX*invB;b.vy+=normalY*invB;
+
+    const tx=-ny,ty=nx;
+    const inertiaA=getMarbleMomentOfInertia(a,massA),inertiaB=getMarbleMomentOfInertia(b,massB);
+    const omegaA=Number.isFinite(a.angularVelocity)?a.angularVelocity:0;
+    const omegaB=Number.isFinite(b.angularVelocity)?b.angularVelocity:0;
+    const tangentVelocity=(b.vx-a.vx)*tx+(b.vy-a.vy)*ty-omegaA*a.r-omegaB*b.r;
+    const tangentDenominator=invTotal+(a.r*a.r)/inertiaA+(b.r*b.r)/inertiaB;
+    if(Math.abs(tangentVelocity)>1e-6&&tangentDenominator>0){
+      const limit=Math.abs(normalImpulse)*TUNING.collision.ballFriction;
+      const tangentImpulse=Math.max(-limit,Math.min(limit,-tangentVelocity/tangentDenominator));
+      const tangentX=tangentImpulse*tx,tangentY=tangentImpulse*ty;
+      a.vx-=tangentX*invA;a.vy-=tangentY*invA;b.vx+=tangentX*invB;b.vy+=tangentY*invB;
+      a.angularVelocity=omegaA-a.r*tangentImpulse/inertiaA;
+      b.angularVelocity=omegaB-b.r*tangentImpulse/inertiaB;
+      capMarbleSpin(a);capMarbleSpin(b);
+    }
+    return true;
+  }
+
+  function resolveBallCollisions(applyVelocity=true){
+    for(const bucketIndex of activeBallBuckets)ballCollisionBuckets[bucketIndex].length=0;
+    activeBallBuckets.length=0;
+    for(let i=0;i<balls.length;i++){
+      const ball=balls[i];if(ball.respawnDelay>0)continue;
+      const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(ball.x/BALL_HASH_CELL)));
+      const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(ball.y/BALL_HASH_CELL)));
+      const bucketIndex=cy*BALL_HASH_COLS+cx,bucket=ballCollisionBuckets[bucketIndex];
+      if(bucket.length===0)activeBallBuckets.push(bucketIndex);
+      bucket.push(i);
+    }
+    for(let i=0;i<balls.length;i++){
+      const ball=balls[i];if(ball.respawnDelay>0)continue;
+      const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(ball.x/BALL_HASH_CELL)));
+      const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(ball.y/BALL_HASH_CELL)));
+      const range=Math.max(1,Math.ceil((ball.r+BALL_RADIUS_MAX)/BALL_HASH_CELL));
+      for(let oy=-range;oy<=range;oy++){
+        const row=cy+oy;if(row<0||row>=BALL_HASH_ROWS)continue;
+        for(let ox=-range;ox<=range;ox++){
+          const col=cx+ox;if(col<0||col>=BALL_HASH_COLS)continue;
+          const bucket=ballCollisionBuckets[row*BALL_HASH_COLS+col];
+          for(let k=0;k<bucket.length;k++){
+            const otherIndex=bucket[k];if(otherIndex<=i)continue;
+            solveBallPairContact(ball,balls[otherIndex],applyVelocity);
           }
         }
       }
@@ -1921,12 +2022,13 @@
     ball.multRegion=cell.type==='gap'?'gap':cell.index;
   }
 
-  function bounceOnVerticalWall(ball,x,isLeft){
+  function bounceOnVerticalWall(ball,x,isLeft,applyVelocity=true){
     if(isLeft){
-      if(ball.x-ball.r<x){ball.x=x+ball.r;ball.vx=Math.abs(ball.vx)*.84;}
-    }else if(ball.x+ball.r>x){
-      ball.x=x-ball.r;ball.vx=-Math.abs(ball.vx)*.84;
+      const penetration=x+ball.r-ball.x;
+      return solveBallSurfaceContact(ball,1,0,penetration,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
     }
+    const penetration=ball.x-(x-ball.r);
+    return solveBallSurfaceContact(ball,-1,0,penetration,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
   }
 
   function getMultiplierWallCapBounce(ball){
@@ -1936,7 +2038,7 @@
     return MULT_WALL_CAP_BOUNCE_MIN+(MULT_WALL_CAP_BOUNCE_MAX-MULT_WALL_CAP_BOUNCE_MIN)*t;
   }
 
-  function collideBallWithSegment(ball,x1,y1,x2,y2,restitution){
+  function collideBallWithSegment(ball,x1,y1,x2,y2,restitution,applyVelocity=true){
     const sx=x2-x1,sy=y2-y1,lenSq=sx*sx+sy*sy;
     if(lenSq<=1e-6)return;
     const px=ball.x-x1,py=ball.y-y1;
@@ -1951,19 +2053,15 @@
       if(ny>0){nx=-nx;ny=-ny;}
     }
     nx/=dist;ny/=dist;
-    const penetration=ball.r-Math.max(dist,1e-5);
-    ball.x+=nx*penetration;
-    ball.y+=ny*penetration;
-    const vn=ball.vx*nx+ball.vy*ny;
-    if(vn<0){
-      const effectiveRestitution=restitution*getCollisionSpeedResponse(Math.hypot(ball.vx,ball.vy));
-      ball.vx-=(1+effectiveRestitution)*vn*nx;
-      ball.vy-=(1+effectiveRestitution)*vn*ny;
-      capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED*1.12);
-    }
+    const hit=solveBallSurfaceContact(ball,nx,ny,ball.r-Math.max(dist,1e-5),{
+      restitution:Math.min(MARBLE_COLLISION_SPEED_RETAIN,Math.max(0,restitution)),
+      friction:TUNING.collision.surfaceFriction
+    },applyVelocity);
+    if(hit)capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED*1.12);
+    return hit;
   }
 
-  function resolveMultiplierWallCapCollisions(ball){
+  function resolveMultiplierWallCapCollisions(ball,applyVelocity=true){
     const capTop=BOARD.multTop-MULT_WALL_CAP_HEIGHT;
     if(ball.y+ball.r<capTop-2||ball.y-ball.r>BOARD.multTop+3)return;
     const half=MULT_SEPARATOR_HALF_WIDTH;
@@ -1971,16 +2069,16 @@
     const bounce=getMultiplierWallCapBounce(ball);
 
     // 左外墙：外侧高、入口侧低的单斜切顶，宽度缩为原来的一半。
-    collideBallWithSegment(ball,PLAYFIELD.left-outerHalf,capTop,PLAYFIELD.left+outerHalf,BOARD.multTop,bounce);
+    collideBallWithSegment(ball,PLAYFIELD.left-outerHalf,capTop,PLAYFIELD.left+outerHalf,BOARD.multTop,bounce,applyVelocity);
 
     // 内部分隔墙：每道墙顶部为双斜面尖顶。
     for(const wall of multBoundaries){
-      collideBallWithSegment(ball,wall.x-half,BOARD.multTop,wall.x,capTop,bounce);
-      collideBallWithSegment(ball,wall.x,capTop,wall.x+half,BOARD.multTop,bounce);
+      collideBallWithSegment(ball,wall.x-half,BOARD.multTop,wall.x,capTop,bounce,applyVelocity);
+      collideBallWithSegment(ball,wall.x,capTop,wall.x+half,BOARD.multTop,bounce,applyVelocity);
     }
 
     // 右外墙：入口侧低、外侧高的单斜切顶，宽度缩为原来的一半。
-    collideBallWithSegment(ball,PLAYFIELD.right-outerHalf,BOARD.multTop,PLAYFIELD.right+outerHalf,capTop,bounce);
+    collideBallWithSegment(ball,PLAYFIELD.right-outerHalf,BOARD.multTop,PLAYFIELD.right+outerHalf,capTop,bounce,applyVelocity);
   }
 
   function applyMultiplierEntryUnjam(ball,dt){
@@ -2011,6 +2109,11 @@
       return false;
     }
 
+    const centerX=cell.x+cell.w*.5;
+    const centerDelta=centerX-ball.x;
+    const centerRange=Math.max(1,openingWidth*.5);
+    const centerPull=Math.max(-1,Math.min(1,centerDelta/centerRange));
+    ball.vx+=centerPull*TUNING.multiplierEntry.centerAttraction*dt;
     ball.multiplierEntryStallTime=(ball.multiplierEntryStallTime||0)+dt;
     if(ball.multiplierEntryStallTime<TUNING.multiplierEntry.stallSeconds)return false;
 
@@ -2023,7 +2126,7 @@
     return true;
   }
 
-  function resolveMultiplierBoundaryCollisions(ball){
+  function resolveMultiplierBoundaryCollisions(ball,applyVelocity=true){
     const prevY=Number.isFinite(ball.prevY)?ball.prevY:ball.y;
     if(Math.max(ball.y,prevY)+ball.r<BOARD.multTop||Math.min(ball.y,prevY)-ball.r>BOARD.multBottom)return;
 
@@ -2035,24 +2138,15 @@
       const clearance=ball.r+halfThickness;
       const prevDx=prevX-wall.x;
       const dx=ball.x-wall.x;
-      const crossedLeftToRight=prevDx<=-clearance&&dx>-clearance;
-      const crossedRightToLeft=prevDx>=clearance&&dx<clearance;
       const overlapping=Math.abs(dx)<clearance;
-
-      if(crossedLeftToRight||(overlapping&&prevDx<=0&&ball.vx>=0)){
-        ball.x=wall.x-clearance;
-        ball.vx=-Math.max(22,Math.abs(ball.vx)*.84);
-      }else if(crossedRightToLeft||(overlapping&&prevDx>=0&&ball.vx<=0)){
-        ball.x=wall.x+clearance;
-        ball.vx=Math.max(22,Math.abs(ball.vx)*.84);
-      }else if(overlapping){
-        if(dx<0){
-          ball.x=wall.x-clearance;
-          ball.vx=-Math.max(22,Math.abs(ball.vx)*.84);
-        }else{
-          ball.x=wall.x+clearance;
-          ball.vx=Math.max(22,Math.abs(ball.vx)*.84);
-        }
+      if(!overlapping)continue;
+      const stayLeft=prevDx<0||(Math.abs(prevDx)<1e-6&&dx<=0);
+      if(stayLeft){
+        const allowedX=wall.x-clearance;
+        solveBallSurfaceContact(ball,-1,0,ball.x-allowedX,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
+      }else{
+        const allowedX=wall.x+clearance;
+        solveBallSurfaceContact(ball,1,0,allowedX-ball.x,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
       }
     }
   }
@@ -2074,45 +2168,46 @@
       Math.pow(1+excessRatio,-COLLISION_SPEED_RESPONSE_EXPONENT));
   }
 
-  function resolveMatrixSideReboundWall(ball,dt){
-    if(ball.sideWallKickCooldown>0)ball.sideWallKickCooldown-=dt;
-    let touched='';
-    const minX=PLAYFIELD.left+ball.r;
-    const maxX=PLAYFIELD.right-ball.r;
-    const preSpeed=Math.max(1,Math.hypot(ball.vx,ball.vy));
-    if(ball.x<minX){
-      ball.x=minX;
-      ball.vx=Math.abs(ball.vx)*.84;
-      touched='left';
-    }else if(ball.x>maxX){
-      ball.x=maxX;
-      ball.vx=-Math.abs(ball.vx)*.84;
-      touched='right';
-    }
-    if(touched){
-      if(ball.sideWallKickCooldown<=0||ball.sideWallSide!==touched){
-        const inwardDirection=touched==='left'?1:-1;
-        const speedResponse=getCollisionSpeedResponse(preSpeed);
-        ball.vx=inwardDirection*Math.max(40,preSpeed*MATRIX_SIDE_WALL_KICK_MULT*speedResponse);
-        ball.sideWallKickCooldown=MATRIX_SIDE_WALL_COOLDOWN;
-        ball.sideWallSide=touched;
-      }
-      // 无论本次是否处于接触冷却，触壁后的最终合速度都不得超过上限。
-      capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED);
-    }else if(ball.x>minX+MATRIX_SIDE_WALL_RELEASE&&ball.x<maxX-MATRIX_SIDE_WALL_RELEASE){
-      ball.sideWallSide='';
-    }
+  function getMarbleCollisionMass(ball){
+    const r=Math.max(1,Number(ball?.r)||1);
+    return Math.pow(r,TUNING.collision.massExponent);
   }
 
-  function resolveMatrixTopBottomWalls(ball){
+  function getMarbleMomentOfInertia(ball,mass=getMarbleCollisionMass(ball)){
+    const r=Math.max(1,Number(ball?.r)||1);
+    return Math.max(1e-6,TUNING.collision.rotationalInertiaFactor*mass*r*r);
+  }
+
+  function applyMarbleAirDrag(ball,dt){
+    const speed=Math.hypot(ball.vx,ball.vy);
+    if(speed<1e-6||dt<=0)return;
+    const tuning=TUNING.collision;
+    const dragRate=Math.min(tuning.airDragMaxRate,
+      tuning.airDragLinear+tuning.airDragQuadratic*speed*speed/Math.max(1,tuning.airDragReferenceSpeed));
+    const retention=Math.exp(-dragRate*dt);
+    ball.vx*=retention;
+    ball.vy*=retention;
+  }
+
+  function resolveMatrixSideReboundWall(ball,dt,applyVelocity=true){
+    const minX=PLAYFIELD.left+ball.r;
+    const maxX=PLAYFIELD.right-ball.r;
+    let touched=false;
+    if(ball.x<minX){
+      touched=solveBallSurfaceContact(ball,1,0,minX-ball.x,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
+    }else if(ball.x>maxX){
+      touched=solveBallSurfaceContact(ball,-1,0,ball.x-maxX,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
+    }
+    if(touched)capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED);
+  }
+
+  function resolveMatrixTopBottomWalls(ball,applyVelocity=true){
     const minY=MATRIX_TOP_WALL_Y+ball.r;
     const maxY=MATRIX_BOTTOM_WALL_Y-ball.r;
     if(ball.y<minY){
-      ball.y=minY;
-      ball.vy=Math.abs(ball.vy)*.82;
+      solveBallSurfaceContact(ball,0,1,minY-ball.y,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
     }else if(ball.y>maxY){
-      ball.y=maxY;
-      ball.vy=-Math.abs(ball.vy)*.82;
+      solveBallSurfaceContact(ball,0,-1,ball.y-maxY,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
     }
   }
 
@@ -2199,12 +2294,14 @@
     ball.multRegion=null;
   }
 
-  function resolveLowerReturnBarrier(ball){
+  function resolveLowerReturnBarrier(ball,applyVelocity=true){
     // 单向挡板只约束已经处于 lower 状态的弹珠；向下穿越时不干预。
     const barrierTop=BOARD.multBottom+ball.r;
     if(ball.y<barrierTop&&ball.vy<0){
-      ball.y=barrierTop;
-      ball.vy=Math.abs(ball.vy)*.12;
+      solveBallSurfaceContact(ball,0,1,barrierTop-ball.y,{
+        restitution:.12,
+        friction:TUNING.collision.surfaceFriction
+      },applyVelocity);
     }
   }
 
@@ -2216,12 +2313,7 @@
       return;
     }
 
-    // 倍率区仅各乘区侧边线与分界线实体化，可直接碰撞反弹；中央空隙底部保持开放。
-    bounceOnVerticalWall(ball,PLAYFIELD.left,true);
-    bounceOnVerticalWall(ball,PLAYFIELD.right,false);
-    resolveMultiplierWallCapCollisions(ball);
-    resolveMultiplierBoundaryCollisions(ball);
-
+    // 碰撞已由统一接触求解器处理；这里只更新区域身份与结算状态。
     const cell=getMultCell(ball.x);
     ball.multRegion=cell.type==='gap'?'gap':cell.index;
 
@@ -2276,11 +2368,6 @@
       return;
     }
 
-    if(cell.right-cell.left>=ball.r*2){
-      bounceOnVerticalWall(ball,cell.left,true);
-      bounceOnVerticalWall(ball,cell.right,false);
-    }
-
     // 只有实际触碰火力转换盒底板时才兑现火力。
     if(ball.y+ball.r>=cell.bottom&&ball.vy>=0){
       ball.y=cell.bottom-ball.r;
@@ -2318,56 +2405,60 @@
     resetBallToTop(ball,{keepValue:false,delay:.14,returnKick:true});
   }
 
+  function resolveBallStaticContacts(ball,dt,applyVelocity){
+    resolveMatrixSideReboundWall(ball,dt,applyVelocity);
+    resolveMatrixTopBottomWalls(ball,applyVelocity);
+    if(ball.zone==='upper'){
+      for(const peg of upperPegs)solveBallCircleContact(ball,peg,applyVelocity);
+    }else if(ball.zone==='lower'){
+      for(const peg of lowerPegs)solveBallCircleContact(ball,peg,applyVelocity);
+      resolveLowerReturnBarrier(ball,applyVelocity);
+    }else if(ball.zone==='multiplier'){
+      resolveMultiplierBoundaryCollisions(ball,applyVelocity);
+    }else if(ball.zone==='convert'){
+      const cell=syncBallConverterCell(ball);
+      if(cell&&cell.right-cell.left>=ball.r*2){
+        bounceOnVerticalWall(ball,cell.left,true,applyVelocity);
+        bounceOnVerticalWall(ball,cell.right,false,applyVelocity);
+      }
+    }
+    resolveMultiplierWallCapCollisions(ball,applyVelocity);
+  }
+
   function stepBalls(dt){
-    const gravity=680;
+    const gravity=750;
     updatePegRotors(dt);
 
-    // 第一阶段：积分运动、边界和旋转碰撞点。
+    // 第一阶段：半隐式积分。业务状态不参与冲量计算，避免不同区域使用不同手感。
     for(const b of balls){
       if(b.respawnDelay>0){b.respawnDelay-=dt;continue;}
       b.r=radiusFromValue(b.value);
       b.life+=dt;
+      b.angularVelocity=(Number.isFinite(b.angularVelocity)?b.angularVelocity:0)*Math.exp(-TUNING.collision.spinDamping*dt);
       b.prevX=b.x;
       b.prevY=b.y;
       b.vy+=gravity*dt;
       applyGapUpdraft(b,dt);
+      applyMarbleAirDrag(b,dt);
       b.x+=b.vx*dt;
       b.y+=b.vy*dt;
       b.trail.push([b.x,b.y]);if(b.trail.length>14)b.trail.shift();
-      resolveMatrixSideReboundWall(b,dt);
-      resolveMatrixTopBottomWalls(b);
-      if(b.zone==='upper'){
-        for(const p of upperPegs)collidePeg(b,p);
-      }else if(b.zone==='lower'){
-        for(const p of lowerPegs)collidePeg(b,p);
-        resolveLowerReturnBarrier(b);
-      }
-      resolveMultiplierWallCapCollisions(b);
     }
 
-    // 第二阶段：12 枚弹珠之间进行弹性碰撞和重叠修正。
-    resolveBallCollisions();
-    // 球间碰撞可能把球推过边界，因此再次约束到统一活动区。
+    // 第二阶段：统一求解所有静态/运动表面与弹珠接触。
+    // 第一轮计算速度冲量，后续轮仅渐进修正位置，避免同一接触重复获得能量。
+    for(let iteration=0;iteration<TUNING.collision.solverIterations;iteration++){
+      const applyVelocity=iteration===0;
+      for(const b of balls){
+        if(b.respawnDelay<=0)resolveBallStaticContacts(b,dt,applyVelocity);
+      }
+      resolveBallCollisions(applyVelocity);
+    }
     for(const b of balls){
-      if(b.respawnDelay>0)continue;
-      resolveMatrixSideReboundWall(b,dt);
-      resolveMatrixTopBottomWalls(b);
-      if(b.zone==='upper'){
-        for(const p of upperPegs)collidePeg(b,p);
-      }else if(b.zone==='lower'){
-        for(const p of lowerPegs)collidePeg(b,p);
-        resolveLowerReturnBarrier(b);
-      }else if(b.zone==='multiplier'){
-        resolveMultiplierBoundaryCollisions(b);
-      }else if(b.zone==='convert'){
-        const cell=syncBallConverterCell(b);
-        if(cell&&cell.right-cell.left>=b.r*2){bounceOnVerticalWall(b,cell.left,true);bounceOnVerticalWall(b,cell.right,false);}
-      }
-      resolveMultiplierWallCapCollisions(b);
-      applyMultiplierEntryUnjam(b,dt);
+      if(b.respawnDelay<=0)applyMultiplierEntryUnjam(b,dt);
     }
 
-    // 第三阶段：倍率、空隙和火力转换状态结算。
+    // 第三阶段：倍率、空隙和火力转换状态结算；这一层不再直接改写碰撞速度。
     for(const b of balls){
       if(b.respawnDelay>0)continue;
       if(b.zone==='upper'){
@@ -3830,7 +3921,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v184-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v208-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -4359,16 +4450,10 @@
 
   function drawBallValueLabel(ball){
     const label=formatNum(ball.value);
-    const maxTextWidth=Math.max(5,ball.r*1.58);
-    let fontSize=Math.min(12,Math.max(7,ball.r*.82));
+    const fontSize=Math.max(7,ball.r*.95);
 
     lctx.save();
     lctx.font=`900 ${fontSize}px monospace`;
-    const measuredWidth=lctx.measureText(label).width;
-    if(measuredWidth>maxTextWidth){
-      fontSize=Math.max(5.5,fontSize*maxTextWidth/measuredWidth);
-      lctx.font=`900 ${fontSize}px monospace`;
-    }
     lctx.textAlign='center';
     lctx.textBaseline='middle';
     lctx.lineJoin='round';
@@ -4522,6 +4607,31 @@
     lctx.restore();
   }
 
+  function drawRotorPegTrails(){
+    // v192：拖尾只来自外圈真实碰撞点的历史位置，中心固定点不产生光丝。
+    lctx.save();
+    lctx.globalCompositeOperation='lighter';
+    lctx.lineCap='round';lctx.lineJoin='round';
+    for(const pegs of [upperPegs,lowerPegs]){
+      for(const peg of pegs){
+        const trail=peg.trail;
+        if(peg.isCenter||!trail||trail.length<2)continue;
+        for(let i=0;i<trail.length-1;i++){
+          const point=trail[i],next=trail[i+1];
+          const fade=Math.max(0,Math.min(1,1-point.age/TUNING.collision.rotorTrailDuration));
+          const segmentFade=fade*.48+.03;
+          lctx.globalAlpha=segmentFade;
+          lctx.strokeStyle='#62cfe4';
+          lctx.lineWidth=.45+1.65*fade;
+          lctx.shadowColor='rgba(57,204,255,.45)';
+          lctx.shadowBlur=.8+2.4*fade;
+          lctx.beginPath();lctx.moveTo(point.x,point.y);lctx.lineTo(next.x,next.y);lctx.stroke();
+        }
+      }
+    }
+    lctx.restore();
+  }
+
   function drawLeft(){
     // v63：先清空整张物理画布，再以统一比例居中绘制，避免圆形被非等比拉伸为椭圆。
     if(leftStaticCacheDirty){buildLeftStatic();leftStaticCacheDirty=false;}
@@ -4536,6 +4646,7 @@
     lctx.drawImage(leftStaticCanvas,0,0,LV.w,LV.h);
     lctx.drawImage(leftSemiStaticCanvas,0,0,LV.w,LV.h);
     drawConverterHighlights();
+    drawRotorPegTrails();
 
     // v118：只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
     // 批量绘制碰撞点，避免每个点重复 save/restore 和路径提交。
@@ -4554,46 +4665,54 @@
         const top=BOARD.multTop,bottom=BOARD.multBottom,height=bottom-top;
         lctx.save();
         const fieldGrad=lctx.createLinearGradient(cell.x,top,cell.x,bottom);
-        fieldGrad.addColorStop(0,'rgba(24,83,108,.10)');
-        fieldGrad.addColorStop(.5,'rgba(39,166,195,.16)');
-        fieldGrad.addColorStop(1,'rgba(24,83,108,.11)');
+        fieldGrad.addColorStop(0,'rgba(8,35,55,.28)');
+        fieldGrad.addColorStop(.48,'rgba(27,108,143,.24)');
+        fieldGrad.addColorStop(1,'rgba(5,25,43,.34)');
         lctx.fillStyle=fieldGrad;
         lctx.fillRect(cell.x,top,cell.w,height);
+        lctx.globalAlpha=.55;lctx.strokeStyle='rgba(91,207,239,.28)';lctx.lineWidth=.75;
+        lctx.beginPath();lctx.moveTo(cell.x+2,top+10);lctx.lineTo(cell.x+cell.w-2,top+10);lctx.moveTo(cell.x+2,bottom-8);lctx.lineTo(cell.x+cell.w-2,bottom-8);lctx.stroke();
 
-        // 低密度上升标记保留力场方向，避免大面积高亮和虚线框叠加。
+        // 参考图式双行上升箭头：保持低密度，但让中央力场成为视觉焦点。
         lctx.globalCompositeOperation='lighter';
-        lctx.lineWidth=1.15;
+        lctx.lineWidth=1.45;
         lctx.shadowColor='rgba(83,220,239,.68)';
-        lctx.shadowBlur=3;
+        lctx.shadowBlur=4;
         const columns=5,streams=2;
         for(let col=0;col<columns;col++){
           const x=cell.x+cell.w*(col+.5)/columns;
           for(let row=0;row<streams;row++){
             const phase=(simulationElapsed*1.05+row/streams+col*.071)%1;
             const y=bottom-8-phase*(height-20);
-            const alpha=.12+.36*(1-Math.abs(phase-.5)*1.35);
+            const alpha=.16+.38*(1-Math.abs(phase-.5)*1.35);
             lctx.globalAlpha=Math.max(.08,alpha);
-            lctx.strokeStyle='#76ddec';
+            lctx.strokeStyle='#57d8ff';
             lctx.beginPath();
-            lctx.moveTo(x,y+8);lctx.lineTo(x,y-6);
-            lctx.moveTo(x,y-6);lctx.lineTo(x-3.5,y-1.5);
-            lctx.moveTo(x,y-6);lctx.lineTo(x+3.5,y-1.5);
+            lctx.moveTo(x,y+9);lctx.lineTo(x,y-7);
+            lctx.moveTo(x,y-7);lctx.lineTo(x-4,y-2.5);
+            lctx.moveTo(x,y-7);lctx.lineTo(x+4,y-2.5);
             lctx.stroke();
           }
         }
         lctx.restore();
 
-        drawText(lctx,'UPDRAFT',cell.x+cell.w/2,bottom-10,{fillStyle:'rgba(154,201,211,.62)',font:'700 7px monospace',align:'center'});
+        drawText(lctx,'UPGRADE',cell.x+cell.w/2,bottom-10,{fillStyle:'rgba(184,231,241,.78)',font:'800 7px monospace',align:'center'});
         continue;
       }
       const col=cell.mult===8?'#f14aff':cell.mult===4?'#8b5cff':'#2adfff';
       lctx.save();
-      const grd=lctx.createLinearGradient(cell.x,BOARD.multTop,cell.x,cell.bottom);grd.addColorStop(0,'rgba(24,25,42,.16)');grd.addColorStop(1,'rgba(10,27,42,.30)');
+      const grd=lctx.createLinearGradient(cell.x,BOARD.multTop,cell.x,cell.bottom);grd.addColorStop(0,'rgba(15,31,51,.26)');grd.addColorStop(.58,'rgba(11,24,44,.36)');grd.addColorStop(1,'rgba(4,14,29,.56)');
       lctx.fillStyle=grd;lctx.fillRect(cell.left,BOARD.multTop,cell.right-cell.left,cell.bottom-BOARD.multTop);
-      lctx.strokeStyle=colorWithAlpha(col,.42);lctx.lineWidth=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;
+      lctx.strokeStyle=colorWithAlpha(col,.48);lctx.lineWidth=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;
       lctx.beginPath();lctx.moveTo(cell.left,BOARD.multTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.multTop);lctx.stroke();
+      lctx.globalAlpha=.52;lctx.strokeStyle='rgba(99,207,236,.36)';lctx.lineWidth=.65;
+      lctx.beginPath();lctx.moveTo(cell.left+2,BOARD.multTop+8);lctx.lineTo(cell.right-2,BOARD.multTop+8);lctx.stroke();
       lctx.restore();
-      drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-11,{fillStyle:'rgba(224,240,244,.86)',font:'800 10px monospace',align:'center'});
+      lctx.save();
+      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.86;lctx.shadowColor='rgba(70,220,255,.72)';lctx.shadowBlur=5;lctx.fillStyle='rgba(100,225,255,.72)';
+      lctx.fillRect(cell.left+7,cell.bottom-5,Math.max(0,cell.right-cell.left-14),2);
+      lctx.restore();
+      drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-13,{fillStyle:'rgba(240,249,252,.94)',font:'800 10px monospace',align:'center'});
     }
 
     // v93：参考图式乘区墙。内部墙为双斜面尖顶，左右外墙为单斜切顶。
@@ -4615,6 +4734,13 @@
       lctx.moveTo(points[0][0],points[0][1]);
       for(let i=1;i<points.length;i++)lctx.lineTo(points[i][0],points[i][1]);
       lctx.closePath();lctx.fill();lctx.stroke();
+      // 玻璃隔板的双层高光：保留真实碰撞宽度，同时增加参考图式的厚度与折射感。
+      const topY=Math.min(...points.map(point=>point[1]));
+      const bottomY=BOARD.multBottom-5;
+      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.68;lctx.shadowColor='rgba(79,218,255,.72)';lctx.shadowBlur=4;lctx.strokeStyle='rgba(101,226,255,.86)';lctx.lineWidth=1.05;
+      lctx.beginPath();lctx.moveTo(xCenter-halfWidth*.42,topY+8);lctx.lineTo(xCenter-halfWidth*.42,bottomY);lctx.moveTo(xCenter+halfWidth*.34,topY+4);lctx.lineTo(xCenter+halfWidth*.34,bottomY);lctx.stroke();
+      lctx.globalAlpha=.30;lctx.shadowBlur=0;lctx.strokeStyle='rgba(238,252,255,.9)';lctx.lineWidth=.65;
+      lctx.beginPath();lctx.moveTo(points[0][0]+1,points[0][1]+2);lctx.lineTo(points[1][0],points[1][1]+2);lctx.stroke();
     };
 
     // 左外墙：向第一个倍率入口内侧下斜。
@@ -5388,6 +5514,13 @@
   log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
   log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
   log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
+  log('Demo v204 已启动：乘区视觉改为参考图式的深色槽体、厚玻璃隔板、发光底托和中央 UPGRADE 力场；分区宽度、碰撞与结算规则保持不变。');
+  log('Demo v205 已启动：火力生成矩阵上层两侧新增向内下斜的玻璃挡板，提供导流与真实碰撞。');
+  log('Demo v206 已启动：两侧乘区挡板改为圆角矩形，宽度调整为 v205 的 120%，视觉厚度与碰撞厚度同步。');
+  log('Demo v207 已启动：移除火力生成矩阵上层两侧挡板；乘区内部隔板和底部单向挡板保持不变。');
+  log('Demo v208 已启动：上方弹珠出生区横向宽度收窄至原来的 70%，出生基准线与初始投放范围同步。');
+  log('Demo v186 已启动：火力生成矩阵在 v185 基础上减速至 80%，当前为原始速度的 64%；战场与渲染帧率不变。');
+  log('Demo v185 已启动：弹珠恢复原黑芯霓虹外观；碰撞质量按 r³ 计算，并加入切向动量、自转与分离式转盘驱动力。');
   log('Demo v184 已启动：固定帧渲染优先使用 H.264 GPU 编码；1080P 为 50 Mbps、4K 为 120 Mbps，不支持时自动回退 VP9 HQ。');
   setInterval(updateStats,250);requestAnimationFrame(frame);
   if(AUTO_RECORD_AT_LOAD){
