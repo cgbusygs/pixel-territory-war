@@ -546,7 +546,7 @@
       </div>
     </div>
     <div class="toolbar">
-      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="overloadBadge">模拟正常</span><span class="badge" id="roundText">运行 00:00 · 无上限</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8 · 保底 0/3</span>
+      <span class="badge" id="profileBadge">性能档位检测中</span><span class="badge" id="perfText">FPS -- · 实体 0</span><span class="badge" id="overloadBadge">模拟正常</span><span class="badge" id="roundText">运行 00:00 · 无上限</span><span class="badge" id="mechanicsText">倍率 ×2 / ×4 / ×8</span>
       <label for="speedRange">模拟速度</label>
       <input id="speedRange" class="speed" type="range" min="0.25" max="10" step="0.25" value="1" />
       <span class="badge" id="speedText">1.00×</span>
@@ -715,7 +715,6 @@
       sizeExponent:1.43348205      // 升力随弹珠直径衰减的曲线陡峭度
     }),
     collision:Object.freeze({
-      ballHashCell:64,             // 大于当前最大弹珠直径 50px，邻格查询即可覆盖碰撞
       solverIterations:5,          // 统一接触求解迭代次数，逐步消除重叠而非瞬间弹开
       maxSubsteps:4,               // 移动端或高速状态下增加物理微步，避免穿透
       maxTravelPerStep:5,          // 单微步最大位移，低于最小弹珠半径
@@ -769,10 +768,6 @@
     }),
     cache:Object.freeze({
       impactMaskMaxEntries:128     // 冲击圆遮罩 LRU 上限，防止无限运行时持续增长
-    }),
-    plinko:Object.freeze({
-      pityDrySettles:3,            // 连续多少次未命中倍率后触发保底
-      pityStartMultiplier:2        // 保底弹珠的初始数值倍率
     }),
     targeting:Object.freeze({
       samples:96,                  // 每次目标选择的候选采样数量
@@ -838,7 +833,7 @@
   let selectedFaction=0, selectedWeapon=null, paused=false, speed=1, simulationElapsed=0, last=performance.now();
   let gameEnded=false,winnerFaction=-1,monochromeFaction=-1,monochromeHoldSeconds=0;
   // 每淘汰一个阵营，后续新生成/重新投放的弹珠起始数值提升 8 倍。
-  let factionStartValueMultiplier=1;
+  let globalStartValueMultiplier=1;
   const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
   const sniperAimJobs=[];
   const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
@@ -850,8 +845,6 @@
   const machineGainFlash=[0,0,0,0];
   const eliminated=[false,false,false,false];
   const eliminationFlash=[0,0,0,0];
-  const multiplierDryStreak=new Uint8Array(4);
-  const multiplierPityCharges=new Uint8Array(4);
   // 已兑现弹珠按 0.5px 直径步长统计；区间左闭右开，50px及以上归入末档。
   const SETTLED_SIZE_BUCKET_MIN=12;
   const SETTLED_SIZE_BUCKET_STEP=.5;
@@ -1171,10 +1164,6 @@
   });
   const frameTrailSegments=[];
   const sniperTrailSegments=[],sniperTrailHistory=[];
-  const BALL_HASH_CELL=TUNING.collision.ballHashCell;
-  const BALL_HASH_COLS=Math.ceil(LV.w/BALL_HASH_CELL),BALL_HASH_ROWS=Math.ceil(LV.h/BALL_HASH_CELL);
-  const ballCollisionBuckets=Array.from({length:BALL_HASH_COLS*BALL_HASH_ROWS},()=>[]);
-  const activeBallBuckets=[];
   const PROJECTILE_HASH_CELL=32;
   const PROJECTILE_HASH_COLS=Math.ceil(WV.w/PROJECTILE_HASH_CELL);
   const PROJECTILE_HASH_ROWS=Math.ceil(WV.h/PROJECTILE_HASH_CELL);
@@ -1229,6 +1218,7 @@
   const hudPercentages=new Float32Array(4);
 
   const upperPegs=[], lowerPegs=[], upperRotors=[], lowerRotors=[], multCells=[], multBoundaries=[], converterCells=[];
+  let gapFieldCell=null;
   // v65：在不改变大体形式的前提下，按当前显示区域重构矩阵内部纵向分配。
   const BOARD={spawnY:68,upperTop:108,upperBottom:358,multTop:388,multBottom:468,lowerTop:500,lowerBottom:758,convertTop:798,convertBottom:934};
   const PLAYFIELD={left:24,right:LV.w-24};
@@ -1246,7 +1236,8 @@
   }
   const MATRIX_TOP_WALL_Y=24;
   const MATRIX_BOTTOM_WALL_Y=Math.min(LV.h-16,BOARD.convertBottom+10);
-  const MULT_SEPARATOR_HALF_WIDTH=8;
+  // 乘区隔板半厚度 4px、总厚度 8px；绘制与胶囊碰撞共用此半径。
+  const MULT_SEPARATOR_HALF_WIDTH=4;
   const CONVERTER_ORDER=Object.freeze(['scatter','machine','shield','orb','sniper']);
   const CONVERTER_MIN_WIDTH=.01;
   const CONVERTER_HIGHLIGHT_FADE=1.15;
@@ -1264,18 +1255,19 @@
   const GAP_FIELD_MAX_DIAMETER=BALL_RADIUS_MAX*2;
 
   // 力场入口防堆积。
-  const GAP_FIELD_GRAVITY_REFERENCE=750;
+  const MATRIX_GRAVITY=1000;
+  const GAP_FIELD_GRAVITY_REFERENCE=MATRIX_GRAVITY;
   const GAP_FIELD_ENTRY_BAND_ABOVE=72;
   const GAP_FIELD_ENTRY_BAND_BELOW=52;
   const GAP_FIELD_STALL_SPEED_Y=190;
+  const GAP_FIELD_WALL_CLEARANCE=1;
+  const GAP_FIELD_CENTERING_ACCEL=720;
+  const GAP_FIELD_CONGESTION_ACCEL=80;
 
-  // 参考图式乘区墙：内部隔墙为双斜面尖顶，左右外墙为单斜切顶。
+  // 乘区立柱统一使用胶囊接触体，所有接触面采用 95% 法向恢复系数。
   const MULT_WALL_CAP_HEIGHT=12;
-  const MULT_WALL_CAP_BOUNCE_MIN=.50;
-  const MULT_WALL_CAP_BOUNCE_MAX=1.10;
-  // v94：左右角落单斜切顶的水平宽度改为当前的一半。
-  const MULT_OUTER_WALL_CAP_HALF_WIDTH=MULT_SEPARATOR_HALF_WIDTH*.5;
-
+  const MULT_WALL_RESTITUTION=.95;
+  const MULT_WALL_TOP_DEFLECT_NORMAL_X=.24;
   const PEG_DISC_POINT_RADIUS=4.1;
   // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值；当前转速为原设定的 80%。
   const PEG_DISC_ORBIT_RADIUS=123.552;
@@ -1352,7 +1344,7 @@
   });
 
   function buildBoard(){
-    buildPegRotors(); multCells.length=0; multBoundaries.length=0; converterCells.length=0;
+    buildPegRotors(); multCells.length=0; multBoundaries.length=0; converterCells.length=0; gapFieldCell=null;
     let multX=PLAYFIELD.left;
     for(let i=0;i<MULT_CELL_LAYOUT.length;i++){
       const layout=MULT_CELL_LAYOUT[i],type=layout.type;
@@ -1364,16 +1356,10 @@
       multCells.push({x:multX,w,type,fraction:layout.fraction,mult:type==='gap'?null:Number(type.slice(1)),left:multX+MULT_SEPARATOR_HALF_WIDTH,right:multX+w-MULT_SEPARATOR_HALF_WIDTH,bottom:BOARD.multBottom,index:i,hitCount:0,hitLabel});
       multX+=w;
     }
-    // v84：中央空隙底部保持开放，仅将各倍率乘区的侧边线与相邻分隔线建立为真实的厚实体碰撞边。
+    gapFieldCell=multCells.find(cell=>cell.type==='gap')||null;
+    // 分隔线只保存中心位置，渲染与碰撞共同使用全局胶囊宽度和纵向范围。
     for(let i=1;i<multCells.length;i++){
-      multBoundaries.push({
-        x:multCells[i].x,
-        top:BOARD.multTop,
-        bottom:BOARD.multBottom,
-        halfWidth:MULT_SEPARATOR_HALF_WIDTH,
-        leftCell:i-1,
-        rightCell:i
-      });
+      multBoundaries.push({x:multCells[i].x});
     }
     for(let i=0;i<CONVERTER_ORDER.length;i++){
       const key=CONVERTER_ORDER[i];
@@ -1657,8 +1643,8 @@
     dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;sniperTrailSegments.length=0;sniperTrailHistory.length=0;sniperAimJobs.length=0;nextSniperAimId=1;
     trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
     machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
-    factionStartValueMultiplier=1;
-    multiplierDryStreak.fill(0);multiplierPityCharges.fill(0);impactMaskCache.clear();
+    globalStartValueMultiplier=1;
+    impactMaskCache.clear();
     for(let i=0;i<4;i++){
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
     }
@@ -1736,7 +1722,7 @@
     return Math.pow(2,Math.floor(Math.max(0,simulationElapsed)/BASE_VALUE_GROWTH_INTERVAL));
   }
   function chooseValue(){return BASE_BALL_VALUE*getBaseValueMultiplier();}
-  function getBallStartValue(){return chooseValue()*factionStartValueMultiplier;}
+  function getBallStartValue(){return chooseValue()*globalStartValueMultiplier;}
   function radiusFromValue(value){
     const safeValue=Number.isFinite(value)?Math.max(BASE_BALL_VALUE,value):Number.MAX_VALUE;
     const decayIntervals=Math.max(0,simulationElapsed/45);
@@ -1775,12 +1761,7 @@
 
   function resetBallToTop(ball,{keepValue=false,useControls=false,delay=0.08,xOverride=null,returnKick=false}={}){
     if(!keepValue){
-      ball.value=getBallStartValue();ball.loopHits=0;
-      if(multiplierPityCharges[ball.faction]>0){
-        ball.value*=TUNING.plinko.pityStartMultiplier;
-        multiplierPityCharges[ball.faction]--;
-        log(`${FACTIONS[ball.faction].name}触发倍率保底：新弹珠初始数值提升为 ${formatNum(ball.value)}`,ball.faction);
-      }
+      ball.value=getBallStartValue();
     }
     ball.r=radiusFromValue(ball.value);
     const offsetRangeEl=UI.offsetRange;
@@ -1804,7 +1785,6 @@
     ball.multRegion=null;
     ball.convertRegion=null;
     ball.gapStallTime=0;
-    ball.gapEjectDirection=0;
     ball.multiplierEntryStallTime=0;
     ball.multiplierEntryKickCooldown=0;
     ball.trail.length=0;
@@ -1814,7 +1794,7 @@
 
   function createFixedBall(faction,slot,delayOverride=null){
     const startValue=getBallStartValue();
-    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,angularVelocity:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,loopHits:0,respawnDelay:0,gapStallTime:0,gapEjectDirection:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
+    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,angularVelocity:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,respawnDelay:0,gapStallTime:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
     balls.push(ball);
     resetBallToTop(ball,{keepValue:true,delay:delayOverride===null?faction*.08+slot*.16:delayOverride});
   }
@@ -1844,7 +1824,7 @@
     const start=TUNING.collision.bounceThreshold,end=Math.max(start+1,TUNING.collision.fullRestitutionSpeed);
     const x=Math.max(0,Math.min(1,(impactSpeed-start)/(end-start)));
     const ramp=x*x*(3-2*x);
-    return Math.max(0,Math.min(MARBLE_COLLISION_SPEED_RETAIN,requested))*ramp;
+    return Math.max(0,Math.min(1,requested))*ramp;
   }
 
   function capMarbleSpin(ball){
@@ -1965,31 +1945,11 @@
   }
 
   function resolveBallCollisions(applyVelocity=true){
-    for(const bucketIndex of activeBallBuckets)ballCollisionBuckets[bucketIndex].length=0;
-    activeBallBuckets.length=0;
     for(let i=0;i<balls.length;i++){
       const ball=balls[i];if(ball.respawnDelay>0)continue;
-      const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(ball.x/BALL_HASH_CELL)));
-      const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(ball.y/BALL_HASH_CELL)));
-      const bucketIndex=cy*BALL_HASH_COLS+cx,bucket=ballCollisionBuckets[bucketIndex];
-      if(bucket.length===0)activeBallBuckets.push(bucketIndex);
-      bucket.push(i);
-    }
-    for(let i=0;i<balls.length;i++){
-      const ball=balls[i];if(ball.respawnDelay>0)continue;
-      const cx=Math.max(0,Math.min(BALL_HASH_COLS-1,Math.floor(ball.x/BALL_HASH_CELL)));
-      const cy=Math.max(0,Math.min(BALL_HASH_ROWS-1,Math.floor(ball.y/BALL_HASH_CELL)));
-      const range=Math.max(1,Math.ceil((ball.r+BALL_RADIUS_MAX)/BALL_HASH_CELL));
-      for(let oy=-range;oy<=range;oy++){
-        const row=cy+oy;if(row<0||row>=BALL_HASH_ROWS)continue;
-        for(let ox=-range;ox<=range;ox++){
-          const col=cx+ox;if(col<0||col>=BALL_HASH_COLS)continue;
-          const bucket=ballCollisionBuckets[row*BALL_HASH_COLS+col];
-          for(let k=0;k<bucket.length;k++){
-            const otherIndex=bucket[k];if(otherIndex<=i)continue;
-            solveBallPairContact(ball,balls[otherIndex],applyVelocity);
-          }
-        }
+      for(let j=i+1;j<balls.length;j++){
+        const other=balls[j];
+        if(other.respawnDelay<=0)solveBallPairContact(ball,other,applyVelocity);
       }
     }
   }
@@ -2013,8 +1973,8 @@
     return x<PLAYFIELD.left?firstActive:lastActive;
   }
 
-  const GAP_LEFT=()=>{const gap=multCells.find(c=>c.type==='gap');return (gap?gap.x:PLAYFIELD.left)+3;};
-  const GAP_RIGHT=()=>{const gap=[...multCells].reverse().find(c=>c.type==='gap');return (gap?gap.x+gap.w:PLAYFIELD.right)-3;};
+  const GAP_LEFT=()=>{const gap=getGapFieldCell();return (gap?gap.x:PLAYFIELD.left)+3;};
+  const GAP_RIGHT=()=>{const gap=getGapFieldCell();return (gap?gap.x+gap.w:PLAYFIELD.right)-3;};
 
   function enterMultiplierRegion(ball){
     const cell=getMultCell(ball.x);
@@ -2031,54 +1991,88 @@
     return solveBallSurfaceContact(ball,-1,0,penetration,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
   }
 
-  function getMultiplierWallCapBounce(ball){
-    const safeValue=Number.isFinite(ball.value)?Math.max(BASE_BALL_VALUE,ball.value):Math.pow(2,20);
-    const power=Math.max(1,Math.min(20,Math.log2(safeValue)));
-    const t=smooth01((power-1)/19);
-    return MULT_WALL_CAP_BOUNCE_MIN+(MULT_WALL_CAP_BOUNCE_MAX-MULT_WALL_CAP_BOUNCE_MIN)*t;
+  function getMultiplierPlateTopDeflectDirection(ball,x){
+    const edgeEpsilon=.25;
+    if(x<=PLAYFIELD.left+edgeEpsilon)return 1;
+    if(x>=PLAYFIELD.right-edgeEpsilon)return -1;
+
+    const gap=getGapFieldCell();
+    if(gap){
+      if(Math.abs(x-gap.x)<=edgeEpsilon)return 1;
+      if(Math.abs(x-(gap.x+gap.w))<=edgeEpsilon)return -1;
+    }
+
+    const offset=ball.x-x;
+    if(Math.abs(offset)>.35)return offset<0?-1:1;
+    if(Math.abs(ball.vx)>8)return ball.vx<0?-1:1;
+    return ((ball.faction*3+ball.slot)&1)?1:-1;
   }
 
-  function collideBallWithSegment(ball,x1,y1,x2,y2,restitution,applyVelocity=true){
+  function collideBallWithCapsule(ball,x1,y1,x2,y2,radius,options={},applyVelocity=true){
     const sx=x2-x1,sy=y2-y1,lenSq=sx*sx+sy*sy;
-    if(lenSq<=1e-6)return;
+    if(lenSq<=1e-6)return false;
     const px=ball.x-x1,py=ball.y-y1;
     const t=Math.max(0,Math.min(1,(px*sx+py*sy)/lenSq));
     const cx=x1+sx*t,cy=y1+sy*t;
     let nx=ball.x-cx,ny=ball.y-cy;
     let dist=Math.hypot(nx,ny);
-    if(dist>=ball.r)return;
+    const minDistance=ball.r+Math.max(0,radius);
+    if(dist>=minDistance)return false;
     if(dist<1e-5){
-      nx=-sy;ny=sx;dist=Math.hypot(nx,ny)||1;
-      // 尖顶碰撞时法线固定朝上方，避免球被压进墙体。
-      if(ny>0){nx=-nx;ny=-ny;}
+      const prevX=Number.isFinite(ball.prevX)?ball.prevX:ball.x;
+      const prevY=Number.isFinite(ball.prevY)?ball.prevY:ball.y;
+      const prevT=Math.max(0,Math.min(1,((prevX-x1)*sx+(prevY-y1)*sy)/lenSq));
+      nx=prevX-(x1+sx*prevT);ny=prevY-(y1+sy*prevT);
+      const prevDistance=Math.hypot(nx,ny);
+      if(prevDistance>1e-5){nx/=prevDistance;ny/=prevDistance;}
+      else if(t<=1e-4){nx=0;ny=-1;}
+      else if(t>=1-1e-4){nx=0;ny=1;}
+      else{nx=ball.vx>0?-1:1;ny=0;}
+      dist=0;
+    }else{
+      nx/=dist;ny/=dist;
     }
-    nx/=dist;ny/=dist;
-    const hit=solveBallSurfaceContact(ball,nx,ny,ball.r-Math.max(dist,1e-5),{
-      restitution:Math.min(MARBLE_COLLISION_SPEED_RETAIN,Math.max(0,restitution)),
+    // 圆顶正中原本会形成完全竖直法线，低速弹珠可能永久平衡在顶端。
+    // 对近顶点接触加入小幅确定性侧向分量，使其自然滚落；空隙边界优先导向空隙。
+    if(t<=1e-4&&ny<0&&Math.abs(nx)<MULT_WALL_TOP_DEFLECT_NORMAL_X){
+      const direction=options.topDeflectDirection<0?-1:1;
+      nx=direction*MULT_WALL_TOP_DEFLECT_NORMAL_X;
+      ny=-Math.sqrt(Math.max(0,1-nx*nx));
+    }
+    const sideRestitution=Number.isFinite(options.sideRestitution)?options.sideRestitution:MARBLE_COLLISION_SPEED_RETAIN;
+    const restitution=t<=1e-4
+      ?(Number.isFinite(options.topRestitution)?options.topRestitution:sideRestitution)
+      :(t>=1-1e-4&&Number.isFinite(options.bottomRestitution)?options.bottomRestitution:sideRestitution);
+    const hit=solveBallSurfaceContact(ball,nx,ny,minDistance-dist,{
+      restitution,
       friction:TUNING.collision.surfaceFriction
     },applyVelocity);
-    if(hit)capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED*1.12);
+    if(hit&&t<=1e-4)capBallSpeed(ball,MATRIX_SIDE_WALL_MAX_SPEED*1.12);
     return hit;
   }
 
-  function resolveMultiplierWallCapCollisions(ball,applyVelocity=true){
-    const capTop=BOARD.multTop-MULT_WALL_CAP_HEIGHT;
-    if(ball.y+ball.r<capTop-2||ball.y-ball.r>BOARD.multTop+3)return;
-    const half=MULT_SEPARATOR_HALF_WIDTH;
-    const outerHalf=MULT_OUTER_WALL_CAP_HALF_WIDTH;
-    const bounce=getMultiplierWallCapBounce(ball);
+  function resolveMultiplierPlateCollisions(ball,applyVelocity=true){
+    const radius=MULT_SEPARATOR_HALF_WIDTH;
+    const top=BOARD.multTop-MULT_WALL_CAP_HEIGHT;
+    const bottom=BOARD.multBottom;
+    if(ball.y+ball.r<top||ball.y-ball.r>bottom)return;
 
-    // 左外墙：外侧高、入口侧低的单斜切顶，宽度缩为原来的一半。
-    collideBallWithSegment(ball,PLAYFIELD.left-outerHalf,capTop,PLAYFIELD.left+outerHalf,BOARD.multTop,bounce,applyVelocity);
-
-    // 内部分隔墙：每道墙顶部为双斜面尖顶。
+    const options={
+      topRestitution:MULT_WALL_RESTITUTION,
+      sideRestitution:MULT_WALL_RESTITUTION,
+      bottomRestitution:MULT_WALL_RESTITUTION,
+      topDeflectDirection:1
+    };
+    const centerTop=top+radius,centerBottom=Math.max(centerTop,bottom-radius);
+    const collidePlate=x=>{
+      options.topDeflectDirection=getMultiplierPlateTopDeflectDirection(ball,x);
+      collideBallWithCapsule(ball,x,centerTop,x,centerBottom,radius,options,applyVelocity);
+    };
+    collidePlate(PLAYFIELD.left);
     for(const wall of multBoundaries){
-      collideBallWithSegment(ball,wall.x-half,BOARD.multTop,wall.x,capTop,bounce,applyVelocity);
-      collideBallWithSegment(ball,wall.x,capTop,wall.x+half,BOARD.multTop,bounce,applyVelocity);
+      collidePlate(wall.x);
     }
-
-    // 右外墙：入口侧低、外侧高的单斜切顶，宽度缩为原来的一半。
-    collideBallWithSegment(ball,PLAYFIELD.right-outerHalf,BOARD.multTop,PLAYFIELD.right+outerHalf,capTop,bounce,applyVelocity);
+    collidePlate(PLAYFIELD.right);
   }
 
   function applyMultiplierEntryUnjam(ball,dt){
@@ -2126,31 +2120,6 @@
     return true;
   }
 
-  function resolveMultiplierBoundaryCollisions(ball,applyVelocity=true){
-    const prevY=Number.isFinite(ball.prevY)?ball.prevY:ball.y;
-    if(Math.max(ball.y,prevY)+ball.r<BOARD.multTop||Math.min(ball.y,prevY)-ball.r>BOARD.multBottom)return;
-
-    const prevX=Number.isFinite(ball.prevX)?ball.prevX:ball.x;
-    for(const wall of multBoundaries){
-      if(Math.max(ball.y,prevY)+ball.r<wall.top||Math.min(ball.y,prevY)-ball.r>wall.bottom)continue;
-
-      const halfThickness=wall.halfWidth||MULT_SEPARATOR_HALF_WIDTH;
-      const clearance=ball.r+halfThickness;
-      const prevDx=prevX-wall.x;
-      const dx=ball.x-wall.x;
-      const overlapping=Math.abs(dx)<clearance;
-      if(!overlapping)continue;
-      const stayLeft=prevDx<0||(Math.abs(prevDx)<1e-6&&dx<=0);
-      if(stayLeft){
-        const allowedX=wall.x-clearance;
-        solveBallSurfaceContact(ball,-1,0,ball.x-allowedX,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
-      }else{
-        const allowedX=wall.x+clearance;
-        solveBallSurfaceContact(ball,1,0,allowedX-ball.x,{restitution:MARBLE_COLLISION_SPEED_RETAIN},applyVelocity);
-      }
-    }
-  }
-
   function capBallSpeed(ball,maxSpeed){
     const currentSpeed=Math.hypot(ball.vx,ball.vy);
     if(currentSpeed>maxSpeed&&currentSpeed>0){
@@ -2189,7 +2158,7 @@
     ball.vy*=retention;
   }
 
-  function resolveMatrixSideReboundWall(ball,dt,applyVelocity=true){
+  function resolveMatrixSideReboundWall(ball,applyVelocity=true){
     const minX=PLAYFIELD.left+ball.r;
     const maxX=PLAYFIELD.right-ball.r;
     let touched=false;
@@ -2217,7 +2186,19 @@
   }
 
   function getGapFieldCell(){
-    return multCells.find(cell=>cell.type==='gap')||null;
+    return gapFieldCell;
+  }
+
+  function countGapEntranceCongestion(gap){
+    if(!gap)return 0;
+    let congestion=0;
+    for(const ball of balls){
+      if(ball.respawnDelay>0)continue;
+      if(ball.y<BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE||ball.y>BOARD.multTop+GAP_FIELD_ENTRY_BAND_BELOW)continue;
+      if(ball.x<gap.x-ball.r-20||ball.x>gap.x+gap.w+ball.r+20)continue;
+      congestion++;
+    }
+    return congestion;
   }
 
   function getGapUpwardAcceleration(ball){
@@ -2228,38 +2209,38 @@
     return GAP_FIELD_LIFT_FLOOR+(GAP_FIELD_LIFT_CEILING-GAP_FIELD_LIFT_FLOOR)*inverseSize;
   }
 
-  function applyGapUpdraft(ball,dt){
-    const gap=getGapFieldCell();
+  function applyGapUpdraft(ball,dt,gap=getGapFieldCell(),congestion=0){
     if(!gap)return 0;
 
     const upwardAccel=getGapUpwardAcceleration(ball);
     if(upwardAccel<=0)return 0;
 
+    const gapRight=gap.x+gap.w;
     const gapCenterX=gap.x+gap.w*.5;
-    const overlapsGapX=ball.x+ball.r>=gap.x&&ball.x-ball.r<=gap.x+gap.w;
-    const nearEntrance=overlapsGapX
+    const centerOverGap=ball.x>=gap.x&&ball.x<=gapRight;
+    const belongsToGap=ball.zone==='multiplier'&&ball.multRegion==='gap';
+    const gapCandidate=centerOverGap||belongsToGap;
+    const nearEntrance=gapCandidate
       &&ball.y>=BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE
       &&ball.y<=BOARD.multTop+GAP_FIELD_ENTRY_BAND_BELOW;
 
+    // 使用真实胶囊挡板半径与球半径定义安全通道，力场不再把球推向实体挡板。
+    const safeLeft=gap.x+MULT_SEPARATOR_HALF_WIDTH+ball.r+GAP_FIELD_WALL_CLEARANCE;
+    const safeRight=gapRight-MULT_SEPARATOR_HALF_WIDTH-ball.r-GAP_FIELD_WALL_CLEARANCE;
+    const hasSafeCorridor=safeLeft<=safeRight;
+    const safeTargetX=hasSafeCorridor
+      ?Math.max(safeLeft,Math.min(safeRight,ball.x))
+      :gapCenterX;
+    const clearanceDelta=safeTargetX-ball.x;
     const rejectStrength=smooth01((upwardAccel-GAP_FIELD_GRAVITY_REFERENCE)/2200);
-    if(nearEntrance&&rejectStrength>0){
-      const centerDelta=ball.x-gapCenterX;
-      if(!ball.gapEjectDirection||Math.abs(centerDelta)>7){
-        if(Math.abs(centerDelta)>2)ball.gapEjectDirection=centerDelta<0?-1:1;
-        else if(Math.abs(ball.vx)>12)ball.gapEjectDirection=ball.vx<0?-1:1;
-        else ball.gapEjectDirection=((ball.faction+ball.slot)&1)?1:-1;
+    if(nearEntrance){
+      if(Math.abs(clearanceDelta)>1e-4){
+        const clearanceRange=Math.max(1,MULT_SEPARATOR_HALF_WIDTH+ball.r+GAP_FIELD_WALL_CLEARANCE);
+        const clearanceStrength=Math.max(0,Math.min(1,Math.abs(clearanceDelta)/clearanceRange));
+        const centeringAccel=(GAP_FIELD_CENTERING_ACCEL+Math.max(0,congestion-2)*GAP_FIELD_CONGESTION_ACCEL)
+          *(.40+.60*rejectStrength)*(.35+.65*clearanceStrength);
+        ball.vx+=Math.sign(clearanceDelta)*centeringAccel*dt;
       }
-
-      let congestion=0;
-      for(const other of balls){
-        if(other.respawnDelay>0)continue;
-        if(other.y<BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE||other.y>BOARD.multTop+GAP_FIELD_ENTRY_BAND_BELOW)continue;
-        if(other.x<gap.x-other.r-20||other.x>gap.x+gap.w+other.r+20)continue;
-        congestion++;
-      }
-
-      const lateralAccel=(250+Math.max(0,congestion-2)*95)*(.38+.62*rejectStrength);
-      ball.vx+=ball.gapEjectDirection*lateralAccel*dt;
 
       const verticallyStalled=Math.abs(ball.vy)<GAP_FIELD_STALL_SPEED_Y;
       if(verticallyStalled)ball.gapStallTime=(ball.gapStallTime||0)+dt;
@@ -2267,22 +2248,25 @@
 
       const stallLimit=congestion>=5?.58:1.05;
       if(ball.gapStallTime>stallLimit){
-        ball.vx+=ball.gapEjectDirection*(175+Math.min(8,congestion)*14);
-        ball.vy=Math.min(ball.vy,-225);
+        if(Math.abs(clearanceDelta)>1e-4){
+          ball.vx+=Math.sign(clearanceDelta)*(150+Math.min(8,congestion)*12);
+        }else{
+          ball.vx*=.72;
+        }
+        ball.vy=Math.min(ball.vy,-260);
         ball.gapStallTime=0;
       }
     }else{
       ball.gapStallTime=Math.max(0,(ball.gapStallTime||0)-dt*1.5);
-      if(!overlapsGapX||ball.y<BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE-20)ball.gapEjectDirection=0;
     }
 
-    const horizontalInset=Math.min(ball.r*.42,gap.w*.08);
-    const centerInsideX=ball.x>=gap.x+horizontalInset&&ball.x<=gap.x+gap.w-horizontalInset;
-    const centerInsideY=ball.y>=BOARD.multTop+ball.r*.12&&ball.y-ball.r<=BOARD.multBottom;
+    const centerInsideX=gapCandidate&&hasSafeCorridor&&ball.x>=safeLeft&&ball.x<=safeRight;
+    const fieldTop=BOARD.multTop-MULT_WALL_CAP_HEIGHT-ball.r;
+    const centerInsideY=ball.y>=fieldTop&&ball.y-ball.r<=BOARD.multBottom;
     if(!centerInsideX||!centerInsideY)return 0;
 
-    const span=Math.max(1,BOARD.multBottom-BOARD.multTop);
-    const yT=Math.max(0,Math.min(1,(ball.y-BOARD.multTop)/span));
+    const span=Math.max(1,BOARD.multBottom-fieldTop);
+    const yT=Math.max(0,Math.min(1,(ball.y-fieldTop)/span));
     const verticalFactor=.72+.28*Math.sin(Math.PI*yT);
     const effectiveAccel=upwardAccel*verticalFactor;
     ball.vy-=effectiveAccel*dt;
@@ -2334,7 +2318,6 @@
       ball.y=cell.bottom-ball.r;
       const newValue=ball.value*cell.mult;
       cell.hitCount=(cell.hitCount||0)+1;
-      multiplierDryStreak[ball.faction]=0;
       log(`${FACTIONS[ball.faction].name}的弹珠触碰 ${cell.type} 碰撞盒底板，数值提升为 ${formatNum(newValue)} 并随机回到顶部`,ball.faction);
       pulses.push({type:'mult',x:cell.x+cell.w/2,y:cell.bottom,r:0,max:54,color:FACTIONS[ball.faction].color,life:1});
       teleportToTop(ball,newValue);
@@ -2378,19 +2361,11 @@
   function teleportToTop(ball,newValue){
     // 不设置玩法层面的火力上限；仅在超出 JavaScript 有限数值范围时停在引擎极限。
     ball.value=Number.isFinite(newValue)?newValue:Number.MAX_VALUE;
-    ball.loopHits++;
     resetBallToTop(ball,{keepValue:true,delay:.08,xOverride:randomSpawnX(),returnKick:true});
   }
 
   function settleBall(ball,cell){
     if(eliminated[ball.faction])return;
-    if(ball.loopHits<=0){
-      multiplierDryStreak[ball.faction]=Math.min(255,multiplierDryStreak[ball.faction]+1);
-      if(multiplierDryStreak[ball.faction]>=TUNING.plinko.pityDrySettles){
-        multiplierDryStreak[ball.faction]=0;
-        multiplierPityCharges[ball.faction]=Math.min(1,multiplierPityCharges[ball.faction]+1);
-      }
-    }else multiplierDryStreak[ball.faction]=0;
     recordSettledBallSize(ball);
     const amount=ball.value;
     cell.hitCount=(cell.hitCount||0)+1;
@@ -2405,16 +2380,14 @@
     resetBallToTop(ball,{keepValue:false,delay:.14,returnKick:true});
   }
 
-  function resolveBallStaticContacts(ball,dt,applyVelocity){
-    resolveMatrixSideReboundWall(ball,dt,applyVelocity);
+  function resolveBallStaticContacts(ball,applyVelocity){
+    resolveMatrixSideReboundWall(ball,applyVelocity);
     resolveMatrixTopBottomWalls(ball,applyVelocity);
     if(ball.zone==='upper'){
       for(const peg of upperPegs)solveBallCircleContact(ball,peg,applyVelocity);
     }else if(ball.zone==='lower'){
       for(const peg of lowerPegs)solveBallCircleContact(ball,peg,applyVelocity);
       resolveLowerReturnBarrier(ball,applyVelocity);
-    }else if(ball.zone==='multiplier'){
-      resolveMultiplierBoundaryCollisions(ball,applyVelocity);
     }else if(ball.zone==='convert'){
       const cell=syncBallConverterCell(ball);
       if(cell&&cell.right-cell.left>=ball.r*2){
@@ -2422,12 +2395,13 @@
         bounceOnVerticalWall(ball,cell.right,false,applyVelocity);
       }
     }
-    resolveMultiplierWallCapCollisions(ball,applyVelocity);
+    resolveMultiplierPlateCollisions(ball,applyVelocity);
   }
 
   function stepBalls(dt){
-    const gravity=750;
     updatePegRotors(dt);
+    const gap=getGapFieldCell();
+    const gapCongestion=countGapEntranceCongestion(gap);
 
     // 第一阶段：半隐式积分。业务状态不参与冲量计算，避免不同区域使用不同手感。
     for(const b of balls){
@@ -2437,8 +2411,8 @@
       b.angularVelocity=(Number.isFinite(b.angularVelocity)?b.angularVelocity:0)*Math.exp(-TUNING.collision.spinDamping*dt);
       b.prevX=b.x;
       b.prevY=b.y;
-      b.vy+=gravity*dt;
-      applyGapUpdraft(b,dt);
+      b.vy+=MATRIX_GRAVITY*dt;
+      applyGapUpdraft(b,dt,gap,gapCongestion);
       applyMarbleAirDrag(b,dt);
       b.x+=b.vx*dt;
       b.y+=b.vy*dt;
@@ -2450,7 +2424,7 @@
     for(let iteration=0;iteration<TUNING.collision.solverIterations;iteration++){
       const applyVelocity=iteration===0;
       for(const b of balls){
-        if(b.respawnDelay<=0)resolveBallStaticContacts(b,dt,applyVelocity);
+        if(b.respawnDelay<=0)resolveBallStaticContacts(b,applyVelocity);
       }
       resolveBallCollisions(applyVelocity);
     }
@@ -2476,12 +2450,20 @@
   }
 
   function updateBalls(dt){
-    let maxSpeed=0;
+    let maxSpeed=0,maxAcceleration=MATRIX_GRAVITY;
+    const gap=getGapFieldCell();
     for(const b of balls){
       if(b.respawnDelay>0)continue;
       maxSpeed=Math.max(maxSpeed,Math.hypot(b.vx,b.vy));
+      const mayTouchGap=gap
+        &&b.x+b.r>=gap.x&&b.x-b.r<=gap.x+gap.w
+        &&b.y+b.r>=BOARD.multTop-GAP_FIELD_ENTRY_BAND_ABOVE
+        &&b.y-b.r<=BOARD.multBottom;
+      if(mayTouchGap){
+        maxAcceleration=Math.max(maxAcceleration,MATRIX_GRAVITY+getGapUpwardAcceleration(b));
+      }
     }
-    const predictedTravel=maxSpeed*dt+340*dt*dt;
+    const predictedTravel=maxSpeed*dt+maxAcceleration*dt*dt;
     const substeps=Math.max(1,Math.min(
       TUNING.collision.maxSubsteps,
       Math.ceil(predictedTravel/TUNING.collision.maxTravelPerStep)
@@ -3355,7 +3337,8 @@
     }
     const resourceSummary=settleEliminatedFactionResources(faction,pendingMachineFirepower,pendingBallValues);
     eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;shieldGainFlash[faction]=0;machineGainFlash[faction]=0;
-    factionStartValueMultiplier*=8;
+    // 全局倍率对所有存活阵营共用；每次淘汰后，所有后续新弹珠统一提升 8 倍。
+    globalStartValueMultiplier*=8;
     machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
     for(let i=fireQueue.length-1;i>=0;i--)if(fireQueue[i].data.faction===faction)fireQueue.splice(i,1);
@@ -3372,7 +3355,7 @@
     const attackerName=attacker===null?'未知阵营':FACTIONS[attacker].name;
     log(`${FACTIONS[faction].name}核心被${attackerName}弹丸击中，已被淘汰`,faction);
     if(resourceSummary.orbCount>0)log(`${FACTIONS[faction].name}淘汰结算：${pendingBallValues.length} 枚生成区弹珠与未结算机枪火力转为 ${resourceSummary.orbCount} 枚随机方向大球（合计 ${formatNum(resourceSummary.totalFirepower)} 火力）`,faction);
-    if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}；后续弹珠起始值 ×${factionStartValueMultiplier}`,attacker!==null?attacker:null);
+    if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}；所有存活阵营后续弹珠起始值 ×${globalStartValueMultiplier}`,attacker!==null?attacker:null);
     updateBaseTextCaches();updateStats();
   }
 
@@ -4281,8 +4264,8 @@
       else if(monochromeFaction>=0)timer.textContent=`${FACTIONS[monochromeFaction].name}单色锁定 ${monochromeHoldSeconds.toFixed(1)} / ${MONOCHROME_WIN_SECONDS.toFixed(0)}秒`;
       else timer.textContent=`运行 ${formatClock(simulationElapsed)} · 无上限`;
     }
-    const perf=UI.perfText;if(perf)perf.textContent=`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · FX ${pulses.length} · 球桶 ${activeBallBuckets.length}`;
-    if(UI.mechanicsText)UI.mechanicsText.textContent=`倍率 ×2 / ×4 / ×8 · ${FACTIONS[selectedFaction].name}保底 ${multiplierDryStreak[selectedFaction]}/${TUNING.plinko.pityDrySettles}${multiplierPityCharges[selectedFaction]?'（已就绪）':''}`;
+    const perf=UI.perfText;if(perf)perf.textContent=`FPS ${displayFps||'--'} · 实体 ${projectiles.length} · FX ${pulses.length} · 弹珠 ${balls.length}`;
+    if(UI.mechanicsText)UI.mechanicsText.textContent='倍率 ×2 / ×4 / ×8';
     updateSimulationOverloadBadge();
     updateMatchRecordingControls();
     updateTopHitDisplays();
@@ -4708,89 +4691,63 @@
       lctx.globalAlpha=.52;lctx.strokeStyle='rgba(99,207,236,.36)';lctx.lineWidth=.65;
       lctx.beginPath();lctx.moveTo(cell.left+2,BOARD.multTop+8);lctx.lineTo(cell.right-2,BOARD.multTop+8);lctx.stroke();
       lctx.restore();
-      lctx.save();
-      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.86;lctx.shadowColor='rgba(70,220,255,.72)';lctx.shadowBlur=5;lctx.fillStyle='rgba(100,225,255,.72)';
-      lctx.fillRect(cell.left+7,cell.bottom-5,Math.max(0,cell.right-cell.left-14),2);
-      lctx.restore();
       drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-13,{fillStyle:'rgba(240,249,252,.94)',font:'800 10px monospace',align:'center'});
     }
 
-    // v93：参考图式乘区墙。内部墙为双斜面尖顶，左右外墙为单斜切顶。
+    // v213：去掉挡板侧面厚度与斜接脚装饰，仅保留主体玻璃面、斜切顶和必要高光。
     lctx.save();
-    lctx.shadowColor='rgba(120,210,225,.28)';
-    lctx.shadowBlur=3;
     const capTop=BOARD.multTop-MULT_WALL_CAP_HEIGHT;
-    const half=MULT_SEPARATOR_HALF_WIDTH;
-    const outerHalf=MULT_OUTER_WALL_CAP_HALF_WIDTH;
-    const drawWallShape=(points,xCenter,halfWidth=half)=>{
-      const grad=lctx.createLinearGradient(xCenter-halfWidth,0,xCenter+halfWidth,0);
-      grad.addColorStop(0,'rgba(58,105,126,.76)');
-      grad.addColorStop(.5,'rgba(190,220,226,.88)');
-      grad.addColorStop(1,'rgba(58,105,126,.76)');
-      lctx.fillStyle=grad;
-      lctx.strokeStyle='rgba(214,238,241,.76)';
-      lctx.lineWidth=.8;
-      lctx.beginPath();
-      lctx.moveTo(points[0][0],points[0][1]);
-      for(let i=1;i<points.length;i++)lctx.lineTo(points[i][0],points[i][1]);
-      lctx.closePath();lctx.fill();lctx.stroke();
-      // 玻璃隔板的双层高光：保留真实碰撞宽度，同时增加参考图式的厚度与折射感。
-      const topY=Math.min(...points.map(point=>point[1]));
-      const bottomY=BOARD.multBottom-5;
-      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.68;lctx.shadowColor='rgba(79,218,255,.72)';lctx.shadowBlur=4;lctx.strokeStyle='rgba(101,226,255,.86)';lctx.lineWidth=1.05;
-      lctx.beginPath();lctx.moveTo(xCenter-halfWidth*.42,topY+8);lctx.lineTo(xCenter-halfWidth*.42,bottomY);lctx.moveTo(xCenter+halfWidth*.34,topY+4);lctx.lineTo(xCenter+halfWidth*.34,bottomY);lctx.stroke();
-      lctx.globalAlpha=.30;lctx.shadowBlur=0;lctx.strokeStyle='rgba(238,252,255,.9)';lctx.lineWidth=.65;
-      lctx.beginPath();lctx.moveTo(points[0][0]+1,points[0][1]+2);lctx.lineTo(points[1][0],points[1][1]+2);lctx.stroke();
-    };
-
-    // 左外墙：向第一个倍率入口内侧下斜。
-    drawWallShape([
-      [PLAYFIELD.left-outerHalf,capTop],
-      [PLAYFIELD.left+outerHalf,BOARD.multTop],
-      [PLAYFIELD.left+outerHalf,BOARD.multBottom],
-      [PLAYFIELD.left-outerHalf,BOARD.multBottom]
-    ],PLAYFIELD.left,outerHalf);
-
-    // 内部墙：双斜面尖顶。
-    for(const wall of multBoundaries){
-      drawWallShape([
-        [wall.x-half,BOARD.multTop],
-        [wall.x,capTop],
-        [wall.x+half,BOARD.multTop],
-        [wall.x+half,wall.bottom],
-        [wall.x-half,wall.bottom]
-      ],wall.x);
-    }
-
-    // 右外墙：从最后一个倍率入口向外侧上斜。
-    drawWallShape([
-      [PLAYFIELD.right-outerHalf,BOARD.multTop],
-      [PLAYFIELD.right+outerHalf,capTop],
-      [PLAYFIELD.right+outerHalf,BOARD.multBottom],
-      [PLAYFIELD.right-outerHalf,BOARD.multBottom]
-    ],PLAYFIELD.right,outerHalf);
-    lctx.restore();
-
-    // 下层单向挡板位于乘区底边，中央空隙段虚化但仍保留真实碰撞。
-    const returnBarrierY=BOARD.multBottom,barrierHalf=3.5,gapCell=multCells.find(cell=>cell.type==='gap');
-    const drawReturnBarrierSegment=(x,w,soft=false)=>{
-      if(w<=0)return;
+    const railY=BOARD.multBottom,plateHalf=MULT_SEPARATOR_HALF_WIDTH;
+    const drawGlassPlate=(xCenter,top,bottom)=>{
+      const bevel=5,frontLeft=xCenter-plateHalf,frontRight=xCenter+plateHalf;
       lctx.save();
-      const barrierGrad=lctx.createLinearGradient(0,returnBarrierY-barrierHalf,0,returnBarrierY+barrierHalf);
-      barrierGrad.addColorStop(0,soft?'rgba(64,116,132,.10)':'rgba(58,105,126,.70)');
-      barrierGrad.addColorStop(.5,soft?'rgba(172,209,216,.18)':'rgba(190,220,226,.88)');
-      barrierGrad.addColorStop(1,soft?'rgba(64,116,132,.10)':'rgba(58,105,126,.70)');
-      lctx.globalAlpha=soft?.52:.92;
-      lctx.filter=soft?'blur(1.8px)':'none';
-      lctx.fillStyle=barrierGrad;lctx.strokeStyle=soft?'rgba(199,226,231,.15)':'rgba(214,238,241,.72)';lctx.lineWidth=.8;lctx.shadowColor='rgba(120,210,225,.24)';lctx.shadowBlur=soft?5:3;
-      lctx.beginPath();lctx.rect(x,returnBarrierY-barrierHalf,w,barrierHalf*2);lctx.fill();lctx.stroke();
+      lctx.globalAlpha=1;lctx.globalCompositeOperation='source-over';lctx.shadowColor='rgba(58,208,246,.46)';lctx.shadowBlur=7;
+
+      const faceGrad=lctx.createLinearGradient(frontLeft,0,frontRight,0);
+      faceGrad.addColorStop(0,'rgba(34,94,128,.86)');faceGrad.addColorStop(.22,'rgba(122,208,232,.78)');faceGrad.addColorStop(.48,'rgba(31,89,123,.70)');faceGrad.addColorStop(.78,'rgba(106,196,224,.68)');faceGrad.addColorStop(1,'rgba(25,67,101,.88)');
+      lctx.fillStyle=faceGrad;lctx.strokeStyle='rgba(194,246,255,.84)';lctx.lineWidth=1;
+      lctx.beginPath();
+      lctx.moveTo(frontLeft,top+bevel);
+      lctx.lineTo(frontLeft+3,top);
+      lctx.lineTo(frontRight-3,top);
+      lctx.lineTo(frontRight,top+bevel);
+      lctx.lineTo(frontRight,bottom);
+      lctx.lineTo(frontLeft,bottom);
+      lctx.closePath();lctx.fill();lctx.stroke();
+
+      // 半透明内芯、纵向折射线和顶部斜切高光，复刻参考图的玻璃层次。
+      lctx.save();
+      lctx.beginPath();
+      lctx.moveTo(frontLeft+3,top+bevel+4);lctx.lineTo(frontLeft+5,top+3);lctx.lineTo(frontRight-5,top+3);lctx.lineTo(frontRight-3,top+bevel+4);lctx.lineTo(frontRight-3,bottom-4);lctx.lineTo(frontLeft+3,bottom-4);lctx.closePath();lctx.clip();
+      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.55;lctx.shadowColor='rgba(80,218,255,.82)';lctx.shadowBlur=4;lctx.strokeStyle='rgba(146,238,255,.82)';lctx.lineWidth=1.15;
+      lctx.beginPath();lctx.moveTo(frontLeft+4,top+10);lctx.lineTo(frontLeft+4,bottom-5);lctx.moveTo(frontLeft+8,top+7);lctx.lineTo(frontLeft+8,bottom-5);lctx.stroke();
+      lctx.globalAlpha=.26;lctx.shadowBlur=0;lctx.strokeStyle='rgba(235,253,255,.96)';lctx.lineWidth=.7;
+      lctx.beginPath();lctx.moveTo(frontLeft+2,top+bevel+2);lctx.lineTo(frontLeft+5,top+2);lctx.lineTo(frontRight-4,top+2);lctx.stroke();
+      lctx.restore();
+
       lctx.restore();
     };
-    if(gapCell){
-      drawReturnBarrierSegment(PLAYFIELD.left,gapCell.x-PLAYFIELD.left,false);
-      drawReturnBarrierSegment(gapCell.x,gapCell.w,true);
-      drawReturnBarrierSegment(gapCell.x+gapCell.w,PLAYFIELD.right-(gapCell.x+gapCell.w),false);
-    }else drawReturnBarrierSegment(PLAYFIELD.left,PLAYFIELD.width,false);
+    const drawGlassBaseRail=()=>{
+      const left=PLAYFIELD.left-2,right=PLAYFIELD.right+2,top=railY-5,bottom=railY+6;
+      lctx.save();
+      lctx.globalAlpha=1;lctx.globalCompositeOperation='source-over';lctx.shadowColor='rgba(57,212,245,.52)';lctx.shadowBlur=9;
+      const railGrad=lctx.createLinearGradient(0,top,0,bottom);
+      railGrad.addColorStop(0,'rgba(72,177,204,.76)');railGrad.addColorStop(.26,'rgba(19,78,108,.86)');railGrad.addColorStop(.7,'rgba(9,38,67,.94)');railGrad.addColorStop(1,'rgba(18,73,100,.82)');
+      lctx.fillStyle=railGrad;lctx.strokeStyle='rgba(107,224,244,.78)';lctx.lineWidth=.9;
+      lctx.beginPath();lctx.moveTo(left,top+2);lctx.lineTo(right,top+2);lctx.lineTo(right-10,bottom);lctx.lineTo(left+10,bottom);lctx.closePath();lctx.fill();lctx.stroke();
+      lctx.globalCompositeOperation='lighter';lctx.globalAlpha=.92;lctx.shadowColor='rgba(74,224,255,.84)';lctx.shadowBlur=5;lctx.strokeStyle='rgba(157,244,255,.88)';lctx.lineWidth=1.35;
+      lctx.beginPath();lctx.moveTo(left+2,top+1.5);lctx.lineTo(right-2,top+1.5);lctx.stroke();
+      lctx.globalAlpha=.45;lctx.shadowBlur=2;lctx.strokeStyle='rgba(60,176,213,.76)';lctx.lineWidth=.8;
+      lctx.beginPath();lctx.moveTo(left+8,bottom-2);lctx.lineTo(right-8,bottom-2);lctx.stroke();
+      lctx.restore();
+    };
+
+    // 先画连续底轨，再把所有侧边立柱压入底轨，形成参考图中的统一结构。
+    drawGlassBaseRail();
+    drawGlassPlate(PLAYFIELD.left,capTop,railY);
+    for(const wall of multBoundaries)drawGlassPlate(wall.x,capTop,railY);
+    drawGlassPlate(PLAYFIELD.right,capTop,railY);
+    lctx.restore();
 
     for(const cell of converterCells){
       if(cell.w<=CONVERTER_MIN_WIDTH)continue;
@@ -5493,7 +5450,7 @@
   log('Demo v72 已启动：时间轴在 30 秒内固定显示 0–30 秒，超过 30 秒后保留从 0 秒开始的全部历史并压缩显示，不再滚动或丢弃最前端数据。');
   log('Demo v71 已启动：火力曲线时间轴改为动态展开与滚动窗口，补入 0 秒起点，并将首尾标签向图表内部对齐。');
   log('Demo v70 已启动：累计火力曲线已增加有限值饱和与对数刻度数量限制，修复极大火力导致页面冻结、无法预览的问题。');
-  log('Demo v96 已启动：弹珠碰撞启用空间哈希；冲击遮罩加入 LRU；中立网格重置改为批量复制；加入倍率保底和领土密度目标评分。');
+  log('Demo v96 已启动：冲击遮罩加入 LRU；中立网格重置改为批量复制；加入领土密度目标评分。');
   log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
   log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
   log('Demo v113 已启动：机枪转换口缩为原宽度 85%，护盾缩为 90%；释放宽度按霰弹、大球、狙击原有 1:2:1 比例重新分配。');
@@ -5519,6 +5476,11 @@
   log('Demo v206 已启动：两侧乘区挡板改为圆角矩形，宽度调整为 v205 的 120%，视觉厚度与碰撞厚度同步。');
   log('Demo v207 已启动：移除火力生成矩阵上层两侧挡板；乘区内部隔板和底部单向挡板保持不变。');
   log('Demo v208 已启动：上方弹珠出生区横向宽度收窄至原来的 70%，出生基准线与初始投放范围同步。');
+  log('Demo v209 已启动：乘区底部单向挡板改为横向胶囊形，碰撞规则保持不变。');
+  log('Demo v210 已启动：乘区内部分隔挡板改为竖向胶囊形，碰撞规则保持不变。');
+  log('Demo v211 已启动：乘区内部分隔挡板延伸并接入底部挡板，视觉上合并为连续结构。');
+  log('Demo v212 已启动：删除旧挡板绘制，重构为参考图式的连续玻璃底轨、斜切立柱与立体接脚。');
+  log('Demo v213 已启动：去掉挡板侧面厚度、外扩侧面和底部斜接脚装饰。');
   log('Demo v186 已启动：火力生成矩阵在 v185 基础上减速至 80%，当前为原始速度的 64%；战场与渲染帧率不变。');
   log('Demo v185 已启动：弹珠恢复原黑芯霓虹外观；碰撞质量按 r³ 计算，并加入切向动量、自转与分离式转盘驱动力。');
   log('Demo v184 已启动：固定帧渲染优先使用 H.264 GPU 编码；1080P 为 50 Mbps、4K 为 120 Mbps，不支持时自动回退 VP9 HQ。');
