@@ -639,7 +639,7 @@
     {type:'x4',fraction:121/1500},
     {type:'x8',fraction:363/8000}
   ];
-  const MULT_WIDTH_MULTIPLIERS={x8:1.30,x4:1,x2:.90,gap:1};
+  const MULT_WIDTH_MULTIPLIERS={x8:1.30,x4:1,x2:.90,gap:1.35};
   const MULT_LAYOUT_WEIGHT_SUM=MULT_CELL_BASE_LAYOUT.reduce((sum,item)=>sum+item.fraction*(MULT_WIDTH_MULTIPLIERS[item.type]||1),0);
   const MULT_CELL_LAYOUT=MULT_CELL_BASE_LAYOUT.map(item=>({
     type:item.type,
