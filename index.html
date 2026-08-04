@@ -619,7 +619,7 @@
 
 <script>
 (() => {
-  const BUILD_INFO=Object.freeze({version:'214',name:'Pixel Territory War'});
+  const BUILD_INFO=Object.freeze({version:'215',name:'Pixel Territory War'});
   document.title=`${BUILD_INFO.name} v${BUILD_INFO.version}`;
   const buildVersionEl=document.getElementById('buildVersion');if(buildVersionEl)buildVersionEl.textContent=`v${BUILD_INFO.version}`;
   const FACTIONS=[
@@ -952,14 +952,23 @@
   territoryCanvas.height=GRID_H;
   const territoryCtx=territoryCanvas.getContext('2d',{alpha:false});
   territoryCtx.imageSmoothingEnabled=false;
-  // v140：领土层优先由 WebGL2 片元着色器按占领时间着色；查询参数
-  // ?territoryRenderer=cpu 可强制使用原 Canvas 2D 路径做画质和性能对照。
+  // v215：WebGL2 继续作为默认稳定路径；?territoryRenderer=webgpu 可启用实验性
+  // WebGPU 着色后端，初始化或设备运行失败时自动回退 WebGL2，再回退 Canvas 2D。
+  // ?territoryRenderer=webgl2 / cpu 可强制指定基准路径做画质和性能对照。
   const territoryGpuCanvas=document.createElement('canvas');
   territoryGpuCanvas.width=GRID_W;
   territoryGpuCanvas.height=GRID_H;
-  const TERRITORY_RENDERER_REQUEST=new URLSearchParams(location.search).get('territoryRenderer')||'auto';
+  const territoryWebGpuCanvas=document.createElement('canvas');
+  territoryWebGpuCanvas.width=GRID_W;
+  territoryWebGpuCanvas.height=GRID_H;
+  const TERRITORY_RENDERER_REQUEST_RAW=(PAGE_PARAMS.get('territoryRenderer')||'auto').toLowerCase();
+  const TERRITORY_RENDERER_REQUEST=['auto','webgpu','webgl2','cpu'].includes(TERRITORY_RENDERER_REQUEST_RAW)?TERRITORY_RENDERER_REQUEST_RAW:'auto';
   let territoryGpuActive=false,territoryGpuContext=null,territoryGpuProgram=null,territoryGpuVao=null,territoryGpuEventsBound=false;
   let territoryGpuOwnerTexture=null,territoryGpuTickTexture=null,territoryGpuUniforms=null,territoryGpuRenderer='Canvas 2D';
+  let territoryGpuBackend='cpu',territoryRendererFallbackReason='';
+  let territoryWebGpuAdapter=null,territoryWebGpuDevice=null,territoryWebGpuContext=null,territoryWebGpuPipeline=null;
+  let territoryWebGpuOwnerTexture=null,territoryWebGpuTickTexture=null,territoryWebGpuUniformBuffer=null,territoryWebGpuBindGroup=null;
+  let territoryWebGpuGeneration=0;
   const territoryImage=territoryCtx.createImageData(GRID_W,GRID_H);
   const territoryPixels=territoryImage.data;
   const territoryPixelWords=new Uint32Array(territoryPixels.buffer);
@@ -1034,7 +1043,120 @@
   }
 
   function updateTerritoryRendererBadge(){
-    if(UI.profileBadge)UI.profileBadge.textContent=`${PERF_PROFILE.name} · ${territoryGpuActive?'GPU领地':'CPU领地'}`;
+    const backendLabel=territoryGpuBackend==='webgpu'?'WebGPU领地':territoryGpuBackend==='webgl2'?'WebGL2领地':'CPU领地';
+    if(UI.profileBadge)UI.profileBadge.textContent=`${PERF_PROFILE.name} · ${backendLabel}`;
+  }
+
+  function getTerritoryRenderCanvas(){
+    return territoryGpuBackend==='webgpu'?territoryWebGpuCanvas:territoryGpuCanvas;
+  }
+
+  function describeTerritoryWebGpuAdapter(adapter){
+    const info=adapter?.info||{};
+    const parts=[info.vendor,info.architecture,info.device,info.description].filter((value,index,items)=>value&&items.indexOf(value)===index);
+    return parts.length?`WebGPU · ${parts.join(' · ')}`:'WebGPU';
+  }
+
+  function destroyTerritoryWebGpuResources(destroyDevice=true){
+    territoryWebGpuGeneration++;
+    try{territoryWebGpuOwnerTexture?.destroy();}catch{}
+    try{territoryWebGpuTickTexture?.destroy();}catch{}
+    try{territoryWebGpuUniformBuffer?.destroy();}catch{}
+    try{territoryWebGpuContext?.unconfigure?.();}catch{}
+    if(destroyDevice){try{territoryWebGpuDevice?.destroy();}catch{}}
+    territoryWebGpuOwnerTexture=null;territoryWebGpuTickTexture=null;territoryWebGpuUniformBuffer=null;territoryWebGpuBindGroup=null;
+    territoryWebGpuPipeline=null;territoryWebGpuContext=null;territoryWebGpuDevice=null;territoryWebGpuAdapter=null;
+  }
+
+  async function initTerritoryWebGpu(){
+    if(!window.isSecureContext)throw new Error('需要安全上下文（HTTPS 或 localhost）');
+    if(!navigator.gpu)throw new Error('当前浏览器或显卡未提供 WebGPU');
+    destroyTerritoryWebGpuResources(true);
+    const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+    if(!adapter)throw new Error('未找到可用的 WebGPU 适配器');
+    const device=await adapter.requestDevice();
+    const context=territoryWebGpuCanvas.getContext('webgpu');
+    if(!context)throw new Error('无法创建 WebGPU 画布上下文');
+    const format=navigator.gpu.getPreferredCanvasFormat();
+    context.configure({device,format,alphaMode:'opaque'});
+    // 尽早登记句柄，后续 shader / pipeline 创建失败时可由统一清理路径释放设备。
+    territoryWebGpuAdapter=adapter;territoryWebGpuDevice=device;territoryWebGpuContext=context;
+    const baseConstants=territoryRGB.map(rgb=>`vec3f(${rgb.map(value=>`${value}.0`).join(',')})`).join(',\n            ');
+    const freshConstants=territoryFreshRGB.map(rgb=>`vec3f(${rgb.map(value=>`${value}.0`).join(',')})`).join(',\n            ');
+    const shaderModule=device.createShaderModule({label:'territory-color-shader',code:`
+        struct Globals {
+          currentTick: u32,
+          padding0: u32,
+          padding1: u32,
+          padding2: u32,
+        }
+        @group(0) @binding(0) var ownerTexture: texture_2d<u32>;
+        @group(0) @binding(1) var capturedTickTexture: texture_2d<u32>;
+        @group(0) @binding(2) var<uniform> globals: Globals;
+        const BASE: array<vec3f,4> = array<vec3f,4>(
+            ${baseConstants}
+        );
+        const FRESH: array<vec3f,4> = array<vec3f,4>(
+            ${freshConstants}
+        );
+        @vertex fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+          const positions=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));
+          return vec4f(positions[vertexIndex],0.0,1.0);
+        }
+        @fragment fn fragmentMain(@builtin(position) position: vec4f) -> @location(0) vec4f {
+          let x=clamp(i32(position.x),0,${GRID_W-1});
+          let y=clamp(i32(position.y),0,${GRID_H-1});
+          let cell=vec2i(x,y);
+          let faction=textureLoad(ownerTexture,cell,0).r;
+          var rgb: vec3f;
+          if(faction>3u){
+            let alternate=((x+y)&1)==1;
+            rgb=select(vec3f(3.0,10.0,22.0),vec3f(5.0,14.0,28.0),alternate);
+          }else{
+            let capturedTick=textureLoad(capturedTickTexture,cell,0).r;
+            let ageTick=select(0u,globals.currentTick-capturedTick,globals.currentTick>=capturedTick);
+            let age=f32(ageTick)/${TERRITORY_COLOR_TICK_HZ.toFixed(1)};
+            let fadeAge=max(0.0,age-${TERRITORY_FLASH_DURATION.toFixed(1)});
+            let freshness=max(0.0,1.0-fadeAge/${TERRITORY_FADE_DURATION.toFixed(1)});
+            let flashBoost=select(1.0,2.0-age/${TERRITORY_FLASH_DURATION.toFixed(1)},age<${TERRITORY_FLASH_DURATION.toFixed(1)});
+            let factionIndex=i32(faction);
+            let color=(BASE[factionIndex]+(FRESH[factionIndex]-BASE[factionIndex])*freshness)*flashBoost;
+            rgb=floor(min(vec3f(255.0),color)+vec3f(0.5));
+          }
+          return vec4f(rgb/255.0,1.0);
+        }`});
+    const pipeline=await device.createRenderPipelineAsync({
+      label:'territory-color-pipeline',layout:'auto',
+      vertex:{module:shaderModule,entryPoint:'vertexMain'},
+      fragment:{module:shaderModule,entryPoint:'fragmentMain',targets:[{format}]},
+      primitive:{topology:'triangle-list'}
+    });
+    const textureUsage=GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST;
+    const ownerTexture=device.createTexture({label:'territory-owner',size:[GRID_W,GRID_H,1],format:'r8uint',usage:textureUsage});
+    const tickTexture=device.createTexture({label:'territory-captured-tick',size:[GRID_W,GRID_H,1],format:'r32uint',usage:textureUsage});
+    const uniformBuffer=device.createBuffer({label:'territory-globals',size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    const bindGroup=device.createBindGroup({
+      label:'territory-bind-group',layout:pipeline.getBindGroupLayout(0),
+      entries:[
+        {binding:0,resource:ownerTexture.createView()},
+        {binding:1,resource:tickTexture.createView()},
+        {binding:2,resource:{buffer:uniformBuffer}}
+      ]
+    });
+    territoryWebGpuPipeline=pipeline;
+    territoryWebGpuOwnerTexture=ownerTexture;territoryWebGpuTickTexture=tickTexture;territoryWebGpuUniformBuffer=uniformBuffer;territoryWebGpuBindGroup=bindGroup;
+    territoryGpuActive=true;territoryGpuBackend='webgpu';territoryGpuRenderer=describeTerritoryWebGpuAdapter(adapter);
+    const generation=++territoryWebGpuGeneration;
+    device.addEventListener('uncapturederror',event=>{
+      if(generation!==territoryWebGpuGeneration||territoryGpuBackend!=='webgpu')return;
+      event.preventDefault?.();
+      void fallbackFromTerritoryWebGpu(`验证错误：${event.error?.message||'未知错误'}`);
+    });
+    device.lost.then(info=>{
+      if(generation!==territoryWebGpuGeneration||territoryGpuBackend!=='webgpu')return;
+      void fallbackFromTerritoryWebGpu(`设备丢失：${info?.message||info?.reason||'未知原因'}`);
+    });
+    return true;
   }
 
   function rebuildTerritoryCpuImage(){
@@ -1130,14 +1252,14 @@
   function restoreTerritoryGpu(){
     const gl=territoryGpuContext;if(!gl)return false;
     try{
-      createTerritoryGpuResources(gl);territoryGpuActive=true;
+      createTerritoryGpuResources(gl);territoryGpuActive=true;territoryGpuBackend='webgl2';
       uploadTerritoryGpuFull(true,true);
       dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);dirtyOwnerTileCount=0;dirtyTickTileCount=0;
       territoryGpuRenderer=`${territoryGpuRenderer}（已恢复）`;updateTerritoryRendererBadge();
       return true;
     }catch(error){
       console.warn('WebGL2 领土层恢复失败，继续使用 Canvas 2D：',error);
-      destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 恢复失败）';
+      destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 恢复失败）';
       rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
       return false;
     }
@@ -1146,7 +1268,7 @@
   function bindTerritoryGpuContextEvents(){
     if(territoryGpuEventsBound)return;territoryGpuEventsBound=true;
     territoryGpuCanvas.addEventListener('webglcontextlost',event=>{
-      event.preventDefault();destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 上下文已丢失）';
+      event.preventDefault();destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 上下文已丢失）';
       rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
     });
     territoryGpuCanvas.addEventListener('webglcontextrestored',()=>restoreTerritoryGpu());
@@ -1160,13 +1282,55 @@
         preserveDrawingBuffer:false,powerPreference:'high-performance',desynchronized:true
       });
       if(!gl)return false;
-      territoryGpuContext=gl;createTerritoryGpuResources(gl);territoryGpuActive=true;bindTerritoryGpuContextEvents();
+      territoryGpuContext=gl;createTerritoryGpuResources(gl);territoryGpuActive=true;territoryGpuBackend='webgl2';bindTerritoryGpuContextEvents();
       return true;
     }catch(error){
       console.warn('WebGL2 领土层初始化失败，已回退 Canvas 2D：',error);
-      destroyTerritoryGpuResources(true);territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 初始化失败）';
+      destroyTerritoryGpuResources(true);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 初始化失败）';
       return false;
     }
+  }
+
+  function activateTerritoryCpuFallback(reason){
+    territoryGpuActive=false;territoryGpuBackend='cpu';territoryRendererFallbackReason=reason||territoryRendererFallbackReason;
+    territoryGpuRenderer=reason?`Canvas 2D（${reason}）`:'Canvas 2D';
+    rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
+  }
+
+  async function fallbackFromTerritoryWebGpu(reason){
+    if(territoryGpuBackend!=='webgpu')return false;
+    console.warn(`WebGPU 领土层${reason}，尝试回退 WebGL2。`);
+    territoryRendererFallbackReason=reason;territoryGpuActive=false;territoryGpuBackend='cpu';
+    destroyTerritoryWebGpuResources(false);
+    if(initTerritoryGpu()){
+      territoryGpuRenderer=`${territoryGpuRenderer}（WebGPU ${reason}，已回退）`;
+      uploadTerritoryGpuFull(true,true);
+      dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);dirtyOwnerTileCount=0;dirtyTickTileCount=0;
+      updateTerritoryRendererBadge();return true;
+    }
+    activateTerritoryCpuFallback(`WebGPU ${reason}且 WebGL2 不可用`);return false;
+  }
+
+  async function initTerritoryRenderer(){
+    territoryGpuActive=false;territoryGpuBackend='cpu';territoryRendererFallbackReason='';territoryGpuRenderer='Canvas 2D';
+    if(TERRITORY_RENDERER_REQUEST==='cpu')return false;
+    if(TERRITORY_RENDERER_REQUEST==='webgpu'){
+      try{
+        return await initTerritoryWebGpu();
+      }catch(error){
+        territoryRendererFallbackReason=error?.message||String(error);
+        console.warn('WebGPU 领土层初始化失败，尝试回退 WebGL2：',error);
+        destroyTerritoryWebGpuResources(true);
+        if(initTerritoryGpu()){
+          territoryGpuRenderer=`${territoryGpuRenderer}（WebGPU 不可用，已回退）`;
+          return true;
+        }
+        territoryGpuRenderer=`Canvas 2D（WebGPU 与 WebGL2 均不可用）`;
+        return false;
+      }
+    }
+    // auto 当前有意保持 WebGL2 优先，避免实验后端影响默认用户。
+    return initTerritoryGpu();
   }
 
   function recordTerritoryUpload(kind,pixels){
@@ -1176,46 +1340,89 @@
   }
 
   function uploadTerritoryGpuOwnerRect(x,y,w,h){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl||w<=0||h<=0)return;
+    if(!territoryGpuActive||w<=0||h<=0)return;
     const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    if(territoryGpuBackend==='webgpu'){
+      const device=territoryWebGpuDevice,texture=territoryWebGpuOwnerTexture;if(!device||!texture)return;
+      try{
+        device.queue.writeTexture(
+          {texture,origin:{x,y,z:0}},owner,
+          {offset:y*GRID_W+x,bytesPerRow:GRID_W,rowsPerImage:GRID_H},
+          {width:w,height:h,depthOrArrayLayers:1}
+        );
+      }catch(error){void fallbackFromTerritoryWebGpu(`owner 上传失败：${error?.message||String(error)}`);return;}
+    }else if(territoryGpuBackend==='webgl2'){
+      const gl=territoryGpuContext;if(!gl)return;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+      gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    }else return;
     recordTerritoryUpload('owner',w*h);
     if(PERF_DEBUG_ACTIVE){perfTerritoryUploadMs+=performance.now()-perfStart;perfTerritoryUploadSamples++;}
   }
 
   function uploadTerritoryGpuTickRect(x,y,w,h){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl||w<=0||h<=0)return;
+    if(!territoryGpuActive||w<=0||h<=0)return;
     const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    if(territoryGpuBackend==='webgpu'){
+      const device=territoryWebGpuDevice,texture=territoryWebGpuTickTexture;if(!device||!texture)return;
+      try{
+        device.queue.writeTexture(
+          {texture,origin:{x,y,z:0}},territoryCapturedTick,
+          {offset:(y*GRID_W+x)*Uint32Array.BYTES_PER_ELEMENT,bytesPerRow:GRID_W*Uint32Array.BYTES_PER_ELEMENT,rowsPerImage:GRID_H},
+          {width:w,height:h,depthOrArrayLayers:1}
+        );
+      }catch(error){void fallbackFromTerritoryWebGpu(`capturedTick 上传失败：${error?.message||String(error)}`);return;}
+    }else if(territoryGpuBackend==='webgl2'){
+      const gl=territoryGpuContext;if(!gl)return;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+      gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    }else return;
     recordTerritoryUpload('tick',w*h);
     if(PERF_DEBUG_ACTIVE){perfTerritoryUploadMs+=performance.now()-perfStart;perfTerritoryUploadSamples++;}
   }
 
   function uploadTerritoryGpuFull(uploadOwner=true,uploadTick=true){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
+    if(!territoryGpuActive)return;
     if(uploadOwner)uploadTerritoryGpuOwnerRect(0,0,GRID_W,GRID_H);
     if(uploadTick)uploadTerritoryGpuTickRect(0,0,GRID_W,GRID_H);
   }
 
   function renderTerritoryGpu(){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
+    if(!territoryGpuActive)return;
+    const currentTick=Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))>>>0;
+    if(territoryGpuBackend==='webgpu'){
+      try{
+        const device=territoryWebGpuDevice,context=territoryWebGpuContext;
+        if(!device||!context||!territoryWebGpuPipeline||!territoryWebGpuBindGroup)throw new Error('运行资源不完整');
+        device.queue.writeBuffer(territoryWebGpuUniformBuffer,0,new Uint32Array([currentTick,0,0,0]));
+        const encoder=device.createCommandEncoder({label:'territory-frame-encoder'});
+        const pass=encoder.beginRenderPass({
+          label:'territory-frame-pass',
+          colorAttachments:[{view:context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:1},loadOp:'clear',storeOp:'store'}]
+        });
+        pass.setPipeline(territoryWebGpuPipeline);pass.setBindGroup(0,territoryWebGpuBindGroup);pass.draw(3);pass.end();
+        device.queue.submit([encoder.finish()]);return;
+      }catch(error){
+        void fallbackFromTerritoryWebGpu(`提交失败：${error?.message||String(error)}`);return;
+      }
+    }
+    const gl=territoryGpuContext;if(territoryGpuBackend!=='webgl2'||!gl)return;
     gl.viewport(0,0,GRID_W,GRID_H);gl.useProgram(territoryGpuProgram);gl.bindVertexArray(territoryGpuVao);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);
-    gl.uniform1ui(territoryGpuUniforms.currentTick,Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))>>>0);
-    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.uniform1ui(territoryGpuUniforms.currentTick,currentTick);gl.drawArrays(gl.TRIANGLES,0,3);
   }
 
   window.__territoryRendererInfo=()=>({
     active:territoryGpuActive,
-    requested:TERRITORY_RENDERER_REQUEST,
-    renderer:territoryGpuRenderer
+    backend:territoryGpuBackend,
+    requested:TERRITORY_RENDERER_REQUEST,requestedRaw:TERRITORY_RENDERER_REQUEST_RAW,
+    renderer:territoryGpuRenderer,fallbackReason:territoryRendererFallbackReason,
+    webgpuAvailable:Boolean(navigator.gpu),secureContext:window.isSecureContext
   });
   const frameTrailSegments=[];
   const sniperTrailSegments=[];
@@ -5157,7 +5364,7 @@
     const t=getVisualTimeSeconds();
     wctx.imageSmoothingEnabled=true;wctx.imageSmoothingQuality='high';wctx.drawImage(battleStaticCanvas,0,0,WV.w,WV.h);
     if(territoryGpuActive)renderTerritoryGpu();
-    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?territoryGpuCanvas:territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
+    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?getTerritoryRenderCanvas():territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.98;wctx.imageSmoothingEnabled=true;wctx.drawImage(sniperTrailCanvas,0,0,WV.w,WV.h);wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
     const preparePerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
@@ -5433,7 +5640,7 @@
   };
   window.__perfDebug=()=>({
     displayFps,projectiles:projectiles.length,projectilePool:projectilePool.length,balls:balls.length,effects:pulses.length,
-    droppedSimulationTime,simAccumulator,territoryGpuActive,
+    droppedSimulationTime,simAccumulator,territoryGpuActive,territoryGpuBackend,territoryGpuRenderer,
     territoryDirtyTiles:territoryGpuActive?dirtyOwnerTileCount+dirtyTickTileCount:dirtyTerritoryColorTileCount,
     territoryOwnerDirtyTiles:dirtyOwnerTileCount,territoryTickDirtyTiles:dirtyTickTileCount,
     ...perfTiming,...perfCounters,projectilePoolSize:projectilePool.length
@@ -5603,16 +5810,25 @@
     if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
     resetGame();
   });
-  initTerritoryGpu();resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
-  for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
-  lastPowerHistoryTime=0;
-  updateStocks();updateStats();
-  log(`${BUILD_INFO.name} v${BUILD_INFO.version} ready · ${PERF_PROFILE.name} · ${territoryGpuActive?'GPU':'CPU'} territory`);
-  setInterval(updateStats,250);requestAnimationFrame(frame);
-  if(AUTO_RECORD_AT_LOAD){
-    if(speedRange){speedRange.value='1';updateSpeedControl();}
-    setTimeout(()=>startMatchRecording(),1200);
+  async function bootGame(){
+    await initTerritoryRenderer();
+    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
+    for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
+    lastPowerHistoryTime=0;
+    updateStocks();updateStats();
+    log(`${BUILD_INFO.name} v${BUILD_INFO.version} ready · ${PERF_PROFILE.name} · ${territoryGpuBackend} territory`);
+    setInterval(updateStats,250);requestAnimationFrame(frame);
+    if(AUTO_RECORD_AT_LOAD){
+      if(speedRange){speedRange.value='1';updateSpeedControl();}
+      setTimeout(()=>startMatchRecording(),1200);
+    }
   }
+  void bootGame().catch(error=>{
+    console.error('游戏启动失败：',error);
+    activateTerritoryCpuFallback('GPU 渲染器启动异常');
+    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
+    updateStocks();updateStats();setInterval(updateStats,250);requestAnimationFrame(frame);
+  });
 })();
 </script>
 </body>

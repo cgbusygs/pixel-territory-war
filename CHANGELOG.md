@@ -1,5 +1,12 @@
 # Changelog
 
+## v215
+
+- 新增实验性 WebGPU 领土着色后端，可通过 `?territoryRenderer=webgpu` 启用。
+- 默认 `auto` 继续使用稳定的 WebGL2 路径；WebGPU 初始化或设备运行失败时自动回退 WebGL2，再回退 Canvas 2D。
+- WebGPU 与 WebGL2 共用 CPU 权威的 owner / capturedTick 和 dirty tile 上传，不改变占领、火力、结算或胜负规则。
+- 扩展 `__territoryRendererInfo()` 与 `__perfDebug()`，暴露实际后端、适配器、回退原因和运行环境能力。
+
 ## v214
 
 - 修复高质量录像失败后无法回退 MediaRecorder 的问题，并区分 started / fallback / cancelled。
@@ -89,4 +96,3 @@
 - Demo v186 已启动：火力生成矩阵在 v185 基础上减速至 80%，当前为原始速度的 64%；战场与渲染帧率不变。
 - Demo v185 已启动：弹珠恢复原黑芯霓虹外观；碰撞质量按 r³ 计算，并加入切向动量、自转与分离式转盘驱动力。
 - Demo v184 已启动：固定帧渲染优先使用 H.264 GPU 编码；1080P 为 50 Mbps、4K 为 120 Mbps，不支持时自动回退 VP9 HQ。
-
