@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>像素领土战争 Demo v208 · Narrow Spawn Band</title>
+  <title>Pixel Territory War v214</title>
   <style>
     :root{
       --text:#f4fbff;
@@ -542,7 +542,7 @@
     <div class="title">
       <div class="logo"><span>◆</span></div>
       <div>
-        <h1>像素领土战争 · 战场态势 v208</h1>
+        <h1>像素领土战争 · 战场态势 <span id="buildVersion"></span></h1>
       </div>
     </div>
     <div class="toolbar">
@@ -619,6 +619,9 @@
 
 <script>
 (() => {
+  const BUILD_INFO=Object.freeze({version:'215',name:'Pixel Territory War'});
+  document.title=`${BUILD_INFO.name} v${BUILD_INFO.version}`;
+  const buildVersionEl=document.getElementById('buildVersion');if(buildVersionEl)buildVersionEl.textContent=`v${BUILD_INFO.version}`;
   const FACTIONS=[
     {name:'绿方',color:'#35ff9c',territory:'#065135',base:[.13,.14]},
     {name:'红方',color:'#ff3d56',territory:'#570f1e',base:[.87,.14]},
@@ -767,7 +770,7 @@
       minSizeDamping:.12            // 即使接近最大直径仍保留少量方向动量
     }),
     cache:Object.freeze({
-      impactMaskMaxEntries:128     // 冲击圆遮罩 LRU 上限，防止无限运行时持续增长
+      impactMaskMaxEntries:128     // 冲击圆遮罩 FIFO 上限，防止无限运行时持续增长
     }),
     targeting:Object.freeze({
       samples:96,                  // 每次目标选择的候选采样数量
@@ -921,6 +924,7 @@
   const SNIPER_LOCK_STROKE_SCALE=1.4;
   const SNIPER_TRAIL_LIFETIME=10;
   const SNIPER_TRAIL_FADE_LAYERS=8;
+  const BALL_TRAIL_CAPACITY=14;
   const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
   const cannonAngle=INITIAL_CANNON_ANGLES.slice();
   const cannonStepCarry=[0,0,0,0];
@@ -933,10 +937,8 @@
   const GRID_W=1000, GRID_H=1000;
   const owner=new Uint8Array(GRID_W*GRID_H);
   const territoryCapturedTick=new Uint32Array(GRID_W*GRID_H);
-  const territoryFadeTracked=new Uint8Array(GRID_W*GRID_H);
-  const territoryFlashTracked=new Uint8Array(GRID_W*GRID_H);
-  const fadingTerritoryCells=[];
-  const flashingTerritoryCells=[];
+  const territoryColorTracked=new Uint8Array(GRID_W*GRID_H);
+  const activeTerritoryColorCells=[];
   const territoryRefreshStamp=new Uint32Array(GRID_W*GRID_H);
   // 同一条弹道会在多个采样点覆盖相同网格；用路径戳避免重复查询和重复占领预算计算。
   const territoryPathStamp=new Uint32Array(GRID_W*GRID_H);
@@ -950,14 +952,23 @@
   territoryCanvas.height=GRID_H;
   const territoryCtx=territoryCanvas.getContext('2d',{alpha:false});
   territoryCtx.imageSmoothingEnabled=false;
-  // v140：领土层优先由 WebGL2 片元着色器按占领时间着色；查询参数
-  // ?territoryRenderer=cpu 可强制使用原 Canvas 2D 路径做画质和性能对照。
+  // v215：WebGL2 继续作为默认稳定路径；?territoryRenderer=webgpu 可启用实验性
+  // WebGPU 着色后端，初始化或设备运行失败时自动回退 WebGL2，再回退 Canvas 2D。
+  // ?territoryRenderer=webgl2 / cpu 可强制指定基准路径做画质和性能对照。
   const territoryGpuCanvas=document.createElement('canvas');
   territoryGpuCanvas.width=GRID_W;
   territoryGpuCanvas.height=GRID_H;
-  const TERRITORY_RENDERER_REQUEST=new URLSearchParams(location.search).get('territoryRenderer')||'auto';
-  let territoryGpuActive=false,territoryGpuContext=null,territoryGpuProgram=null,territoryGpuVao=null;
+  const territoryWebGpuCanvas=document.createElement('canvas');
+  territoryWebGpuCanvas.width=GRID_W;
+  territoryWebGpuCanvas.height=GRID_H;
+  const TERRITORY_RENDERER_REQUEST_RAW=(PAGE_PARAMS.get('territoryRenderer')||'auto').toLowerCase();
+  const TERRITORY_RENDERER_REQUEST=['auto','webgpu','webgl2','cpu'].includes(TERRITORY_RENDERER_REQUEST_RAW)?TERRITORY_RENDERER_REQUEST_RAW:'auto';
+  let territoryGpuActive=false,territoryGpuContext=null,territoryGpuProgram=null,territoryGpuVao=null,territoryGpuEventsBound=false;
   let territoryGpuOwnerTexture=null,territoryGpuTickTexture=null,territoryGpuUniforms=null,territoryGpuRenderer='Canvas 2D';
+  let territoryGpuBackend='cpu',territoryRendererFallbackReason='';
+  let territoryWebGpuAdapter=null,territoryWebGpuDevice=null,territoryWebGpuContext=null,territoryWebGpuPipeline=null;
+  let territoryWebGpuOwnerTexture=null,territoryWebGpuTickTexture=null,territoryWebGpuUniformBuffer=null,territoryWebGpuBindGroup=null;
+  let territoryWebGpuGeneration=0;
   const territoryImage=territoryCtx.createImageData(GRID_W,GRID_H);
   const territoryPixels=territoryImage.data;
   const territoryPixelWords=new Uint32Array(territoryPixels.buffer);
@@ -980,7 +991,6 @@
     return territoryRGB[faction].map((base,channel)=>Math.round(base+(accent[channel]-base)*.62));
   });
   const TERRITORY_BRIGHTNESS_STEP=.1;
-  const TERRITORY_FLASH_STEP=.1;
   const TERRITORY_FLASH_DURATION=.5;
   const TERRITORY_FADE_DURATION=30;
   const TERRITORY_COLOR_TICK_HZ=PERF_PROFILE.simulationHz;
@@ -1004,11 +1014,15 @@
   const TERRITORY_TILE_SIZE=32;
   const TERRITORY_TILE_COLS=Math.ceil(GRID_W/TERRITORY_TILE_SIZE);
   const TERRITORY_TILE_ROWS=Math.ceil(GRID_H/TERRITORY_TILE_SIZE);
-  const dirtyTerritoryTiles=new Uint8Array(TERRITORY_TILE_COLS*TERRITORY_TILE_ROWS);
-  let dirtyTerritoryTileCount=0;
+  const TERRITORY_TILE_COUNT=TERRITORY_TILE_COLS*TERRITORY_TILE_ROWS;
+  // CPU 颜色回退、GPU owner 与 GPU capturedTick 分别维护 dirty state。
+  const dirtyTerritoryColorTiles=new Uint8Array(TERRITORY_TILE_COUNT);
+  const dirtyOwnerTiles=new Uint8Array(TERRITORY_TILE_COUNT);
+  const dirtyTickTiles=new Uint8Array(TERRITORY_TILE_COUNT);
+  let dirtyTerritoryColorTileCount=0,dirtyOwnerTileCount=0,dirtyTickTileCount=0;
   const impactMaskCache=new Map();
   const IMPACT_MASK_CACHE_MAX=TUNING.cache.impactMaskMaxEntries;
-  let territorySimCarry=0,territoryUploadCarry=0,territoryBrightnessCarry=0,territoryFlashCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,hudTextCarry=HUD_TEXT_STEP;
+  let territorySimCarry=0,territoryUploadCarry=0,territoryColorCarry=0,trailUpdateCarry=0,effectUpdateCarry=0,hudTextCarry=HUD_TEXT_STEP;
 
   function compileTerritoryGpuShader(gl,type,source){
     const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);
@@ -1029,41 +1043,156 @@
   }
 
   function updateTerritoryRendererBadge(){
-    if(UI.profileBadge)UI.profileBadge.textContent=`${PERF_PROFILE.name} · ${territoryGpuActive?'GPU领地':'CPU领地'}`;
+    const backendLabel=territoryGpuBackend==='webgpu'?'WebGPU领地':territoryGpuBackend==='webgl2'?'WebGL2领地':'CPU领地';
+    if(UI.profileBadge)UI.profileBadge.textContent=`${PERF_PROFILE.name} · ${backendLabel}`;
+  }
+
+  function getTerritoryRenderCanvas(){
+    return territoryGpuBackend==='webgpu'?territoryWebGpuCanvas:territoryGpuCanvas;
+  }
+
+  function describeTerritoryWebGpuAdapter(adapter){
+    const info=adapter?.info||{};
+    const parts=[info.vendor,info.architecture,info.device,info.description].filter((value,index,items)=>value&&items.indexOf(value)===index);
+    return parts.length?`WebGPU · ${parts.join(' · ')}`:'WebGPU';
+  }
+
+  function destroyTerritoryWebGpuResources(destroyDevice=true){
+    territoryWebGpuGeneration++;
+    try{territoryWebGpuOwnerTexture?.destroy();}catch{}
+    try{territoryWebGpuTickTexture?.destroy();}catch{}
+    try{territoryWebGpuUniformBuffer?.destroy();}catch{}
+    try{territoryWebGpuContext?.unconfigure?.();}catch{}
+    if(destroyDevice){try{territoryWebGpuDevice?.destroy();}catch{}}
+    territoryWebGpuOwnerTexture=null;territoryWebGpuTickTexture=null;territoryWebGpuUniformBuffer=null;territoryWebGpuBindGroup=null;
+    territoryWebGpuPipeline=null;territoryWebGpuContext=null;territoryWebGpuDevice=null;territoryWebGpuAdapter=null;
+  }
+
+  async function initTerritoryWebGpu(){
+    if(!window.isSecureContext)throw new Error('需要安全上下文（HTTPS 或 localhost）');
+    if(!navigator.gpu)throw new Error('当前浏览器或显卡未提供 WebGPU');
+    destroyTerritoryWebGpuResources(true);
+    const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+    if(!adapter)throw new Error('未找到可用的 WebGPU 适配器');
+    const device=await adapter.requestDevice();
+    const context=territoryWebGpuCanvas.getContext('webgpu');
+    if(!context)throw new Error('无法创建 WebGPU 画布上下文');
+    const format=navigator.gpu.getPreferredCanvasFormat();
+    context.configure({device,format,alphaMode:'opaque'});
+    // 尽早登记句柄，后续 shader / pipeline 创建失败时可由统一清理路径释放设备。
+    territoryWebGpuAdapter=adapter;territoryWebGpuDevice=device;territoryWebGpuContext=context;
+    const baseConstants=territoryRGB.map(rgb=>`vec3f(${rgb.map(value=>`${value}.0`).join(',')})`).join(',\n            ');
+    const freshConstants=territoryFreshRGB.map(rgb=>`vec3f(${rgb.map(value=>`${value}.0`).join(',')})`).join(',\n            ');
+    const shaderModule=device.createShaderModule({label:'territory-color-shader',code:`
+        struct Globals {
+          currentTick: u32,
+          padding0: u32,
+          padding1: u32,
+          padding2: u32,
+        }
+        @group(0) @binding(0) var ownerTexture: texture_2d<u32>;
+        @group(0) @binding(1) var capturedTickTexture: texture_2d<u32>;
+        @group(0) @binding(2) var<uniform> globals: Globals;
+        const BASE: array<vec3f,4> = array<vec3f,4>(
+            ${baseConstants}
+        );
+        const FRESH: array<vec3f,4> = array<vec3f,4>(
+            ${freshConstants}
+        );
+        @vertex fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+          const positions=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));
+          return vec4f(positions[vertexIndex],0.0,1.0);
+        }
+        @fragment fn fragmentMain(@builtin(position) position: vec4f) -> @location(0) vec4f {
+          let x=clamp(i32(position.x),0,${GRID_W-1});
+          let y=clamp(i32(position.y),0,${GRID_H-1});
+          let cell=vec2i(x,y);
+          let faction=textureLoad(ownerTexture,cell,0).r;
+          var rgb: vec3f;
+          if(faction>3u){
+            let alternate=((x+y)&1)==1;
+            rgb=select(vec3f(3.0,10.0,22.0),vec3f(5.0,14.0,28.0),alternate);
+          }else{
+            let capturedTick=textureLoad(capturedTickTexture,cell,0).r;
+            let ageTick=select(0u,globals.currentTick-capturedTick,globals.currentTick>=capturedTick);
+            let age=f32(ageTick)/${TERRITORY_COLOR_TICK_HZ.toFixed(1)};
+            let fadeAge=max(0.0,age-${TERRITORY_FLASH_DURATION.toFixed(1)});
+            let freshness=max(0.0,1.0-fadeAge/${TERRITORY_FADE_DURATION.toFixed(1)});
+            let flashBoost=select(1.0,2.0-age/${TERRITORY_FLASH_DURATION.toFixed(1)},age<${TERRITORY_FLASH_DURATION.toFixed(1)});
+            let factionIndex=i32(faction);
+            let color=(BASE[factionIndex]+(FRESH[factionIndex]-BASE[factionIndex])*freshness)*flashBoost;
+            rgb=floor(min(vec3f(255.0),color)+vec3f(0.5));
+          }
+          return vec4f(rgb/255.0,1.0);
+        }`});
+    const pipeline=await device.createRenderPipelineAsync({
+      label:'territory-color-pipeline',layout:'auto',
+      vertex:{module:shaderModule,entryPoint:'vertexMain'},
+      fragment:{module:shaderModule,entryPoint:'fragmentMain',targets:[{format}]},
+      primitive:{topology:'triangle-list'}
+    });
+    const textureUsage=GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST;
+    const ownerTexture=device.createTexture({label:'territory-owner',size:[GRID_W,GRID_H,1],format:'r8uint',usage:textureUsage});
+    const tickTexture=device.createTexture({label:'territory-captured-tick',size:[GRID_W,GRID_H,1],format:'r32uint',usage:textureUsage});
+    const uniformBuffer=device.createBuffer({label:'territory-globals',size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    const bindGroup=device.createBindGroup({
+      label:'territory-bind-group',layout:pipeline.getBindGroupLayout(0),
+      entries:[
+        {binding:0,resource:ownerTexture.createView()},
+        {binding:1,resource:tickTexture.createView()},
+        {binding:2,resource:{buffer:uniformBuffer}}
+      ]
+    });
+    territoryWebGpuPipeline=pipeline;
+    territoryWebGpuOwnerTexture=ownerTexture;territoryWebGpuTickTexture=tickTexture;territoryWebGpuUniformBuffer=uniformBuffer;territoryWebGpuBindGroup=bindGroup;
+    territoryGpuActive=true;territoryGpuBackend='webgpu';territoryGpuRenderer=describeTerritoryWebGpuAdapter(adapter);
+    const generation=++territoryWebGpuGeneration;
+    device.addEventListener('uncapturederror',event=>{
+      if(generation!==territoryWebGpuGeneration||territoryGpuBackend!=='webgpu')return;
+      event.preventDefault?.();
+      void fallbackFromTerritoryWebGpu(`验证错误：${event.error?.message||'未知错误'}`);
+    });
+    device.lost.then(info=>{
+      if(generation!==territoryWebGpuGeneration||territoryGpuBackend!=='webgpu')return;
+      void fallbackFromTerritoryWebGpu(`设备丢失：${info?.message||info?.reason||'未知原因'}`);
+    });
+    return true;
   }
 
   function rebuildTerritoryCpuImage(){
     territoryPixels.set(neutralTerritoryPixels);
-    territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);
-    fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;
+    territoryColorTracked.fill(0);activeTerritoryColorCells.length=0;
     const currentTick=Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ));
-    const flashTicks=Math.round(TERRITORY_FLASH_DURATION*TERRITORY_COLOR_TICK_HZ);
     for(let cellIndex=0;cellIndex<owner.length;cellIndex++){
       const faction=owner[cellIndex];if(faction===255)continue;
       const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
       writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
-      if(ageTick<TERRITORY_COLOR_TICK_COUNT-1){territoryFadeTracked[cellIndex]=1;fadingTerritoryCells.push(cellIndex);}
-      if(ageTick<flashTicks){territoryFlashTracked[cellIndex]=1;flashingTerritoryCells.push(cellIndex);}
+      if(ageTick<TERRITORY_COLOR_TICK_COUNT-1){territoryColorTracked[cellIndex]=1;activeTerritoryColorCells.push(cellIndex);}
     }
     territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
+    dirtyTerritoryColorTiles.fill(0);dirtyTerritoryColorTileCount=0;
   }
 
-  function initTerritoryGpu(){
-    if(TERRITORY_RENDERER_REQUEST==='cpu')return false;
-    try{
-      const gl=territoryGpuCanvas.getContext('webgl2',{
-        alpha:false,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,
-        preserveDrawingBuffer:false,powerPreference:'high-performance',desynchronized:true
-      });
-      if(!gl)return false;
-      const vertexSource=`#version 300 es
+  function destroyTerritoryGpuResources(deleteHandles=true){
+    const gl=territoryGpuContext;
+    if(deleteHandles&&gl&&!gl.isContextLost?.()){
+      if(territoryGpuOwnerTexture)gl.deleteTexture(territoryGpuOwnerTexture);
+      if(territoryGpuTickTexture)gl.deleteTexture(territoryGpuTickTexture);
+      if(territoryGpuVao)gl.deleteVertexArray(territoryGpuVao);
+      if(territoryGpuProgram)gl.deleteProgram(territoryGpuProgram);
+    }
+    territoryGpuOwnerTexture=null;territoryGpuTickTexture=null;territoryGpuVao=null;territoryGpuProgram=null;territoryGpuUniforms=null;
+  }
+
+  function createTerritoryGpuResources(gl){
+    destroyTerritoryGpuResources(true);
+    const vertexSource=`#version 300 es
         precision highp float;
         void main(){
           vec2 position=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
           gl_Position=vec4(position*2.0-1.0,0.0,1.0);
         }`;
-      const fragmentSource=`#version 300 es
+    const fragmentSource=`#version 300 es
         precision highp float;
         precision highp int;
         precision highp usampler2D;
@@ -1095,75 +1224,208 @@
           }
           outColor=vec4(rgb/255.0,1.0);
         }`;
-      const vertexShader=compileTerritoryGpuShader(gl,gl.VERTEX_SHADER,vertexSource);
-      const fragmentShader=compileTerritoryGpuShader(gl,gl.FRAGMENT_SHADER,fragmentSource);
-      const program=gl.createProgram();gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
-      gl.deleteShader(vertexShader);gl.deleteShader(fragmentShader);
-      if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program)||'WebGL2 程序链接失败');
+    const vertexShader=compileTerritoryGpuShader(gl,gl.VERTEX_SHADER,vertexSource);
+    const fragmentShader=compileTerritoryGpuShader(gl,gl.FRAGMENT_SHADER,fragmentSource);
+    const program=gl.createProgram();gl.attachShader(program,vertexShader);gl.attachShader(program,fragmentShader);gl.linkProgram(program);
+    gl.deleteShader(vertexShader);gl.deleteShader(fragmentShader);
+    if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
+      const message=gl.getProgramInfoLog(program)||'WebGL2 程序链接失败';gl.deleteProgram(program);throw new Error(message);
+    }
 
-      territoryGpuContext=gl;territoryGpuProgram=program;territoryGpuVao=gl.createVertexArray();
-      territoryGpuOwnerTexture=createTerritoryGpuTexture(gl,gl.R8UI,gl.RED_INTEGER,gl.UNSIGNED_BYTE);
-      territoryGpuTickTexture=createTerritoryGpuTexture(gl,gl.R32UI,gl.RED_INTEGER,gl.UNSIGNED_INT);
-      territoryGpuUniforms={
-        currentTick:gl.getUniformLocation(program,'uCurrentTick'),
-        base:gl.getUniformLocation(program,'uBase[0]'),
-        fresh:gl.getUniformLocation(program,'uFresh[0]')
-      };
-      gl.useProgram(program);
-      gl.uniform1i(gl.getUniformLocation(program,'uOwner'),0);
-      gl.uniform1i(gl.getUniformLocation(program,'uCapturedTick'),1);
-      gl.uniform3fv(territoryGpuUniforms.base,new Float32Array(territoryRGB.flat()));
-      gl.uniform3fv(territoryGpuUniforms.fresh,new Float32Array(territoryFreshRGB.flat()));
-      const rendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
-      territoryGpuRenderer=rendererInfo?gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
-      territoryGpuActive=true;
-      territoryGpuCanvas.addEventListener('webglcontextlost',event=>{
-        event.preventDefault();territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 上下文已丢失）';
-        rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
-      },{once:true});
+    territoryGpuProgram=program;territoryGpuVao=gl.createVertexArray();
+    territoryGpuOwnerTexture=createTerritoryGpuTexture(gl,gl.R8UI,gl.RED_INTEGER,gl.UNSIGNED_BYTE);
+    territoryGpuTickTexture=createTerritoryGpuTexture(gl,gl.R32UI,gl.RED_INTEGER,gl.UNSIGNED_INT);
+    territoryGpuUniforms={
+      currentTick:gl.getUniformLocation(program,'uCurrentTick'),
+      base:gl.getUniformLocation(program,'uBase[0]'),
+      fresh:gl.getUniformLocation(program,'uFresh[0]')
+    };
+    gl.useProgram(program);
+    gl.uniform1i(gl.getUniformLocation(program,'uOwner'),0);
+    gl.uniform1i(gl.getUniformLocation(program,'uCapturedTick'),1);
+    gl.uniform3fv(territoryGpuUniforms.base,new Float32Array(territoryRGB.flat()));
+    gl.uniform3fv(territoryGpuUniforms.fresh,new Float32Array(territoryFreshRGB.flat()));
+    const rendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
+    territoryGpuRenderer=rendererInfo?gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+  }
+
+  function restoreTerritoryGpu(){
+    const gl=territoryGpuContext;if(!gl)return false;
+    try{
+      createTerritoryGpuResources(gl);territoryGpuActive=true;territoryGpuBackend='webgl2';
+      uploadTerritoryGpuFull(true,true);
+      dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);dirtyOwnerTileCount=0;dirtyTickTileCount=0;
+      territoryGpuRenderer=`${territoryGpuRenderer}（已恢复）`;updateTerritoryRendererBadge();
       return true;
     }catch(error){
-      console.warn('WebGL2 领土层初始化失败，已回退 Canvas 2D：',error);
-      territoryGpuActive=false;territoryGpuRenderer='Canvas 2D（WebGL2 初始化失败）';
+      console.warn('WebGL2 领土层恢复失败，继续使用 Canvas 2D：',error);
+      destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 恢复失败）';
+      rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
       return false;
     }
   }
 
-  function uploadTerritoryGpuRect(x,y,w,h){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl||w<=0||h<=0)return;
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+  function bindTerritoryGpuContextEvents(){
+    if(territoryGpuEventsBound)return;territoryGpuEventsBound=true;
+    territoryGpuCanvas.addEventListener('webglcontextlost',event=>{
+      event.preventDefault();destroyTerritoryGpuResources(false);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 上下文已丢失）';
+      rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
+    });
+    territoryGpuCanvas.addEventListener('webglcontextrestored',()=>restoreTerritoryGpu());
   }
 
-  function uploadTerritoryGpuFull(){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,GRID_W,GRID_H,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
-    gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,GRID_W,GRID_H,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
+  function initTerritoryGpu(){
+    if(TERRITORY_RENDERER_REQUEST==='cpu')return false;
+    try{
+      const gl=territoryGpuCanvas.getContext('webgl2',{
+        alpha:false,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,
+        preserveDrawingBuffer:false,powerPreference:'high-performance',desynchronized:true
+      });
+      if(!gl)return false;
+      territoryGpuContext=gl;createTerritoryGpuResources(gl);territoryGpuActive=true;territoryGpuBackend='webgl2';bindTerritoryGpuContextEvents();
+      return true;
+    }catch(error){
+      console.warn('WebGL2 领土层初始化失败，已回退 Canvas 2D：',error);
+      destroyTerritoryGpuResources(true);territoryGpuActive=false;territoryGpuBackend='cpu';territoryGpuRenderer='Canvas 2D（WebGL2 初始化失败）';
+      return false;
+    }
+  }
+
+  function activateTerritoryCpuFallback(reason){
+    territoryGpuActive=false;territoryGpuBackend='cpu';territoryRendererFallbackReason=reason||territoryRendererFallbackReason;
+    territoryGpuRenderer=reason?`Canvas 2D（${reason}）`:'Canvas 2D';
+    rebuildTerritoryCpuImage();updateTerritoryRendererBadge();
+  }
+
+  async function fallbackFromTerritoryWebGpu(reason){
+    if(territoryGpuBackend!=='webgpu')return false;
+    console.warn(`WebGPU 领土层${reason}，尝试回退 WebGL2。`);
+    territoryRendererFallbackReason=reason;territoryGpuActive=false;territoryGpuBackend='cpu';
+    destroyTerritoryWebGpuResources(false);
+    if(initTerritoryGpu()){
+      territoryGpuRenderer=`${territoryGpuRenderer}（WebGPU ${reason}，已回退）`;
+      uploadTerritoryGpuFull(true,true);
+      dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);dirtyOwnerTileCount=0;dirtyTickTileCount=0;
+      updateTerritoryRendererBadge();return true;
+    }
+    activateTerritoryCpuFallback(`WebGPU ${reason}且 WebGL2 不可用`);return false;
+  }
+
+  async function initTerritoryRenderer(){
+    territoryGpuActive=false;territoryGpuBackend='cpu';territoryRendererFallbackReason='';territoryGpuRenderer='Canvas 2D';
+    if(TERRITORY_RENDERER_REQUEST==='cpu')return false;
+    if(TERRITORY_RENDERER_REQUEST==='webgpu'){
+      try{
+        return await initTerritoryWebGpu();
+      }catch(error){
+        territoryRendererFallbackReason=error?.message||String(error);
+        console.warn('WebGPU 领土层初始化失败，尝试回退 WebGL2：',error);
+        destroyTerritoryWebGpuResources(true);
+        if(initTerritoryGpu()){
+          territoryGpuRenderer=`${territoryGpuRenderer}（WebGPU 不可用，已回退）`;
+          return true;
+        }
+        territoryGpuRenderer=`Canvas 2D（WebGPU 与 WebGL2 均不可用）`;
+        return false;
+      }
+    }
+    // auto 当前有意保持 WebGL2 优先，避免实验后端影响默认用户。
+    return initTerritoryGpu();
+  }
+
+  function recordTerritoryUpload(kind,pixels){
+    perfCounters.territoryUploadRects++;perfCounters.territoryUploadPixels+=pixels;
+    if(kind==='owner'){perfCounters.ownerUploadRects++;perfCounters.ownerUploadPixels+=pixels;}
+    else if(kind==='tick'){perfCounters.tickUploadRects++;perfCounters.tickUploadPixels+=pixels;}
+  }
+
+  function uploadTerritoryGpuOwnerRect(x,y,w,h){
+    if(!territoryGpuActive||w<=0||h<=0)return;
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+    if(territoryGpuBackend==='webgpu'){
+      const device=territoryWebGpuDevice,texture=territoryWebGpuOwnerTexture;if(!device||!texture)return;
+      try{
+        device.queue.writeTexture(
+          {texture,origin:{x,y,z:0}},owner,
+          {offset:y*GRID_W+x,bytesPerRow:GRID_W,rowsPerImage:GRID_H},
+          {width:w,height:h,depthOrArrayLayers:1}
+        );
+      }catch(error){void fallbackFromTerritoryWebGpu(`owner 上传失败：${error?.message||String(error)}`);return;}
+    }else if(territoryGpuBackend==='webgl2'){
+      const gl=territoryGpuContext;if(!gl)return;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+      gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_BYTE,owner);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    }else return;
+    recordTerritoryUpload('owner',w*h);
+    if(PERF_DEBUG_ACTIVE){perfTerritoryUploadMs+=performance.now()-perfStart;perfTerritoryUploadSamples++;}
+  }
+
+  function uploadTerritoryGpuTickRect(x,y,w,h){
+    if(!territoryGpuActive||w<=0||h<=0)return;
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+    if(territoryGpuBackend==='webgpu'){
+      const device=territoryWebGpuDevice,texture=territoryWebGpuTickTexture;if(!device||!texture)return;
+      try{
+        device.queue.writeTexture(
+          {texture,origin:{x,y,z:0}},territoryCapturedTick,
+          {offset:(y*GRID_W+x)*Uint32Array.BYTES_PER_ELEMENT,bytesPerRow:GRID_W*Uint32Array.BYTES_PER_ELEMENT,rowsPerImage:GRID_H},
+          {width:w,height:h,depthOrArrayLayers:1}
+        );
+      }catch(error){void fallbackFromTerritoryWebGpu(`capturedTick 上传失败：${error?.message||String(error)}`);return;}
+    }else if(territoryGpuBackend==='webgl2'){
+      const gl=territoryGpuContext;if(!gl)return;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,GRID_W);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,x);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,y);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+      gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,w,h,gl.RED_INTEGER,gl.UNSIGNED_INT,territoryCapturedTick);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,0);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,0);
+    }else return;
+    recordTerritoryUpload('tick',w*h);
+    if(PERF_DEBUG_ACTIVE){perfTerritoryUploadMs+=performance.now()-perfStart;perfTerritoryUploadSamples++;}
+  }
+
+  function uploadTerritoryGpuFull(uploadOwner=true,uploadTick=true){
+    if(!territoryGpuActive)return;
+    if(uploadOwner)uploadTerritoryGpuOwnerRect(0,0,GRID_W,GRID_H);
+    if(uploadTick)uploadTerritoryGpuTickRect(0,0,GRID_W,GRID_H);
   }
 
   function renderTerritoryGpu(){
-    const gl=territoryGpuContext;if(!territoryGpuActive||!gl)return;
+    if(!territoryGpuActive)return;
+    const currentTick=Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))>>>0;
+    if(territoryGpuBackend==='webgpu'){
+      try{
+        const device=territoryWebGpuDevice,context=territoryWebGpuContext;
+        if(!device||!context||!territoryWebGpuPipeline||!territoryWebGpuBindGroup)throw new Error('运行资源不完整');
+        device.queue.writeBuffer(territoryWebGpuUniformBuffer,0,new Uint32Array([currentTick,0,0,0]));
+        const encoder=device.createCommandEncoder({label:'territory-frame-encoder'});
+        const pass=encoder.beginRenderPass({
+          label:'territory-frame-pass',
+          colorAttachments:[{view:context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:1},loadOp:'clear',storeOp:'store'}]
+        });
+        pass.setPipeline(territoryWebGpuPipeline);pass.setBindGroup(0,territoryWebGpuBindGroup);pass.draw(3);pass.end();
+        device.queue.submit([encoder.finish()]);return;
+      }catch(error){
+        void fallbackFromTerritoryWebGpu(`提交失败：${error?.message||String(error)}`);return;
+      }
+    }
+    const gl=territoryGpuContext;if(territoryGpuBackend!=='webgl2'||!gl)return;
     gl.viewport(0,0,GRID_W,GRID_H);gl.useProgram(territoryGpuProgram);gl.bindVertexArray(territoryGpuVao);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,territoryGpuOwnerTexture);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,territoryGpuTickTexture);
-    gl.uniform1ui(territoryGpuUniforms.currentTick,Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))>>>0);
-    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.uniform1ui(territoryGpuUniforms.currentTick,currentTick);gl.drawArrays(gl.TRIANGLES,0,3);
   }
 
   window.__territoryRendererInfo=()=>({
     active:territoryGpuActive,
-    requested:TERRITORY_RENDERER_REQUEST,
-    renderer:territoryGpuRenderer
+    backend:territoryGpuBackend,
+    requested:TERRITORY_RENDERER_REQUEST,requestedRaw:TERRITORY_RENDERER_REQUEST_RAW,
+    renderer:territoryGpuRenderer,fallbackReason:territoryRendererFallbackReason,
+    webgpuAvailable:Boolean(navigator.gpu),secureContext:window.isSecureContext
   });
   const frameTrailSegments=[];
-  const sniperTrailSegments=[],sniperTrailHistory=[];
+  const sniperTrailSegments=[];
   const PROJECTILE_HASH_CELL=32;
   const PROJECTILE_HASH_COLS=Math.ceil(WV.w/PROJECTILE_HASH_CELL);
   const PROJECTILE_HASH_ROWS=Math.ceil(WV.h/PROJECTILE_HASH_CELL);
@@ -1195,6 +1457,14 @@
   sniperTrailCanvas.height=Math.round(WV.h*TRAIL_SCALE);
   const sniperTrailCtx=sniperTrailCanvas.getContext('2d',{alpha:true,desynchronized:true});
   sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
+  const SNIPER_TRAIL_LAYER_COUNT=SNIPER_TRAIL_FADE_LAYERS;
+  const SNIPER_TRAIL_LAYER_SECONDS=SNIPER_TRAIL_LIFETIME/SNIPER_TRAIL_LAYER_COUNT;
+  const sniperTrailLayers=Array.from({length:SNIPER_TRAIL_LAYER_COUNT},()=>{
+    const canvas=document.createElement('canvas');canvas.width=sniperTrailCanvas.width;canvas.height=sniperTrailCanvas.height;
+    const ctx=canvas.getContext('2d',{alpha:true,desynchronized:true});ctx.lineCap='round';ctx.lineJoin='round';
+    return {canvas,ctx,hasContent:false};
+  });
+  let sniperTrailLayerHead=0,sniperTrailLayerElapsed=0;
 
   // 左侧矩阵背景网格和右侧战场背景均离屏预渲染。
   const leftStaticCanvas=document.createElement('canvas');
@@ -1632,22 +1902,18 @@
     }
   }
 
-  function resetTerritory(){
-    owner.fill(255);territoryCapturedTick.fill(0);territoryFadeTracked.fill(0);territoryFlashTracked.fill(0);territoryRefreshStamp.fill(0);fadingTerritoryCells.length=0;flashingTerritoryCells.length=0;territoryCounts.fill(0);
-    territoryRefreshStepId=0;
+  function resetTerritoryState(){
+    owner.fill(255);territoryCapturedTick.fill(0);territoryColorTracked.fill(0);territoryRefreshStamp.fill(0);territoryPathStamp.fill(0);
+    activeTerritoryColorCells.length=0;territoryCounts.fill(0);territoryRefreshStepId=0;territoryPathStampId=1;
     if(!territoryGpuActive)territoryPixels.set(neutralTerritoryPixels);
     // 基地外圈以内的所有 1×1 逻辑方格，开局即为对应阵营颜色并计入占领比例。
     seedBaseTerritories();
-    if(territoryGpuActive)uploadTerritoryGpuFull();
+    if(territoryGpuActive)uploadTerritoryGpuFull(true,true);
     else territoryCtx.putImageData(territoryImage,0,0);
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;territorySimCarry=0;territoryUploadCarry=0;territoryBrightnessCarry=0;territoryFlashCarry=0;trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;frameTrailSegments.length=0;sniperTrailSegments.length=0;sniperTrailHistory.length=0;sniperAimJobs.length=0;nextSniperAimId=1;
-    trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
-    machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);for(const g of machineVisualGroups){g.rounds=0;g.damage=0;g.sin=0;g.cos=0;g.speed=0;g.count=0;g.seed=0;}
-    globalStartValueMultiplier=1;
+    dirtyTerritoryColorTiles.fill(0);dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);
+    dirtyTerritoryColorTileCount=0;dirtyOwnerTileCount=0;dirtyTickTileCount=0;
+    territorySimCarry=0;territoryUploadCarry=0;territoryColorCarry=0;
     impactMaskCache.clear();
-    for(let i=0;i<4;i++){
-      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;
-    }
   }
 
   function writeTerritoryAgeColorTick(cellIndex,faction,tick){
@@ -1656,41 +1922,23 @@
     if(territoryPixelWords[cellIndex]===color)return false;
     territoryPixelWords[cellIndex]=color;
     const x=cellIndex%GRID_W,y=(cellIndex/GRID_W)|0,tileIndex=(y>>5)*TERRITORY_TILE_COLS+(x>>5);
-    if(!dirtyTerritoryTiles[tileIndex]){dirtyTerritoryTiles[tileIndex]=1;dirtyTerritoryTileCount++;}
+    if(!dirtyTerritoryColorTiles[tileIndex]){dirtyTerritoryColorTiles[tileIndex]=1;dirtyTerritoryColorTileCount++;}
     return true;
   }
-  function updateTerritoryBrightness(){
+  function updateTerritoryColors(){
     const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
-    for(let i=fadingTerritoryCells.length-1;i>=0;i--){
-      const cellIndex=fadingTerritoryCells[i],faction=owner[cellIndex];
+    for(let i=activeTerritoryColorCells.length-1;i>=0;i--){
+      const cellIndex=activeTerritoryColorCells[i],faction=owner[cellIndex];
       if(faction===255){
-        territoryFadeTracked[cellIndex]=0;
-        const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
+        territoryColorTracked[cellIndex]=0;
+        const last=activeTerritoryColorCells.pop();if(i<activeTerritoryColorCells.length)activeTerritoryColorCells[i]=last;
         continue;
       }
       const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
       writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
       if(ageTick>=TERRITORY_COLOR_TICK_COUNT-1){
-        territoryFadeTracked[cellIndex]=0;
-        const last=fadingTerritoryCells.pop();if(i<fadingTerritoryCells.length)fadingTerritoryCells[i]=last;
-      }
-    }
-  }
-
-  function updateTerritoryFlash(){
-    const currentTick=Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ);
-    for(let i=flashingTerritoryCells.length-1;i>=0;i--){
-      const cellIndex=flashingTerritoryCells[i],faction=owner[cellIndex];
-      if(faction===255){
-        territoryFlashTracked[cellIndex]=0;
-        const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
-        continue;
-      }
-      const ageTick=Math.max(0,currentTick-territoryCapturedTick[cellIndex]);
-      writeTerritoryAgeColorTick(cellIndex,faction,ageTick);
-      if(ageTick>=Math.round(TERRITORY_FLASH_DURATION*TERRITORY_COLOR_TICK_HZ)){
-        territoryFlashTracked[cellIndex]=0;
-        const last=flashingTerritoryCells.pop();if(i<flashingTerritoryCells.length)flashingTerritoryCells[i]=last;
+        territoryColorTracked[cellIndex]=0;
+        const last=activeTerritoryColorCells.pop();if(i<activeTerritoryColorCells.length)activeTerritoryColorCells[i]=last;
       }
     }
   }
@@ -1759,6 +2007,16 @@
     return bestX;
   }
 
+  function initBallTrail(ball){
+    ball.trailX=new Float32Array(BALL_TRAIL_CAPACITY);ball.trailY=new Float32Array(BALL_TRAIL_CAPACITY);
+    ball.trailHead=0;ball.trailCount=0;
+  }
+  function resetBallTrail(ball){ball.trailHead=0;ball.trailCount=0;}
+  function pushBallTrail(ball,x,y){
+    const index=ball.trailHead;ball.trailX[index]=x;ball.trailY[index]=y;
+    ball.trailHead=(index+1)%BALL_TRAIL_CAPACITY;ball.trailCount=Math.min(BALL_TRAIL_CAPACITY,ball.trailCount+1);
+  }
+
   function resetBallToTop(ball,{keepValue=false,useControls=false,delay=0.08,xOverride=null,returnKick=false}={}){
     if(!keepValue){
       ball.value=getBallStartValue();
@@ -1787,14 +2045,15 @@
     ball.gapStallTime=0;
     ball.multiplierEntryStallTime=0;
     ball.multiplierEntryKickCooldown=0;
-    ball.trail.length=0;
+    resetBallTrail(ball);
     ball.life=0;
     ball.respawnDelay=delay+Math.random()*.08;
   }
 
   function createFixedBall(faction,slot,delayOverride=null){
     const startValue=getBallStartValue();
-    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,angularVelocity:0,r:radiusFromValue(startValue),trail:[],life:0,zone:'upper',multRegion:null,respawnDelay:0,gapStallTime:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
+    const ball={faction,slot,weapon:STOCK_KEYS[(faction+slot)%STOCK_KEYS.length],value:startValue,x:0,y:0,vx:0,vy:0,angularVelocity:0,r:radiusFromValue(startValue),life:0,zone:'upper',multRegion:null,respawnDelay:0,gapStallTime:0,multiplierEntryStallTime:0,multiplierEntryKickCooldown:0};
+    initBallTrail(ball);
     balls.push(ball);
     resetBallToTop(ball,{keepValue:true,delay:delayOverride===null?faction*.08+slot*.16:delayOverride});
   }
@@ -2416,7 +2675,7 @@
       applyMarbleAirDrag(b,dt);
       b.x+=b.vx*dt;
       b.y+=b.vy*dt;
-      b.trail.push([b.x,b.y]);if(b.trail.length>14)b.trail.shift();
+      pushBallTrail(b,b.x,b.y);
     }
 
     // 第二阶段：统一求解所有静态/运动表面与弹珠接触。
@@ -2764,17 +3023,24 @@
     p.absorbFlashAt=-10;p.absorbAngle=0;p.absorbStrength=0;
     p.renderTailLongX=p.renderTailLongY=p.renderTailShortX=p.renderTailShortY=0;
     p.renderTailLongVisible=p.renderTailShortVisible=false;
-    projectiles.push(p);
+    projectiles.push(p);if(projectiles.length>perfCounters.projectilePeakCount)perfCounters.projectilePeakCount=projectiles.length;
   }
 
-  function markTerritoryDirtyRect(minX,minY,maxX,maxY){
+  function markTerritoryTiles(mask,minX,minY,maxX,maxY){
     minX=Math.max(0,Math.floor(minX));minY=Math.max(0,Math.floor(minY));
     maxX=Math.min(GRID_W-1,Math.ceil(maxX));maxY=Math.min(GRID_H-1,Math.ceil(maxY));
-    const tx0=minX>>5,ty0=minY>>5,tx1=maxX>>5,ty1=maxY>>5;
+    const tx0=minX>>5,ty0=minY>>5,tx1=maxX>>5,ty1=maxY>>5;let added=0;
     for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){
       const index=ty*TERRITORY_TILE_COLS+tx;
-      if(!dirtyTerritoryTiles[index]){dirtyTerritoryTiles[index]=1;dirtyTerritoryTileCount++;}
+      if(!mask[index]){mask[index]=1;added++;}
     }
+    return added;
+  }
+  function markTerritoryOwnerDirtyRect(minX,minY,maxX,maxY){
+    dirtyOwnerTileCount+=markTerritoryTiles(dirtyOwnerTiles,minX,minY,maxX,maxY);
+  }
+  function markTerritoryTickDirtyRect(minX,minY,maxX,maxY){
+    dirtyTickTileCount+=markTerritoryTiles(dirtyTickTiles,minX,minY,maxX,maxY);
   }
 
   function refreshTerritoryCell(idx,faction,capturedTime=simulationElapsed){
@@ -2783,8 +3049,7 @@
     territoryRefreshStamp[idx]=refreshToken;
     territoryCapturedTick[idx]=Math.max(0,Math.round(capturedTime*TERRITORY_COLOR_TICK_HZ));
     if(!territoryGpuActive){
-      if(!territoryFadeTracked[idx]){territoryFadeTracked[idx]=1;fadingTerritoryCells.push(idx);}
-      if(!territoryFlashTracked[idx]){territoryFlashTracked[idx]=1;flashingTerritoryCells.push(idx);}
+      if(!territoryColorTracked[idx]){territoryColorTracked[idx]=1;activeTerritoryColorCells.push(idx);}
       writeTerritoryAgeColorTick(idx,faction,0);
     }
     return true;
@@ -2799,24 +3064,28 @@
     const idx=y*GRID_W+x,prev=owner[idx];
     if(prev===faction){
       if(!refreshOwned)return 0;
-      refreshTerritoryCell(idx,faction);
+      const refreshed=refreshTerritoryCell(idx,faction);
+      if(territoryGpuActive&&refreshed)markTerritoryTickDirtyRect(x,y,x,y);
       return 2;
     }
     if(prev!==255)territoryCounts[prev]--;
     territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);
+    if(territoryGpuActive){markTerritoryOwnerDirtyRect(x,y,x,y);markTerritoryTickDirtyRect(x,y,x,y);}
     return 1;
   }
 
-  function getImpactMask(r,gx,gy,requireRadialOrder=true){
+  const impactMaskResult={mask:null,baseX:0,baseY:0,qr:0};
+  const paintPathResult={spent:0,exhausted:false,x:0,y:0};
+  function getImpactMask(r,gx,gy,requireRadialOrder=true,out=impactMaskResult){
     const qr=Math.max(.5,Math.round(r*2)/2),baseX=Math.floor(gx),baseY=Math.floor(gy);
     const fxStep=Math.round((gx-baseX)*4),fyStep=Math.round((gy-baseY)*4);
     const fx=fxStep/4,fy=fyStep/4,key=(Math.round(qr*2)*5+fxStep)*5+fyStep;
     let entry=impactMaskCache.get(key);
     if(entry&&(!requireRadialOrder||entry.radial)){
-      // Map 的插入顺序作为轻量 LRU；命中后移到末尾。
-      impactMaskCache.delete(key);impactMaskCache.set(key,entry);
-      return {mask:entry.mask,baseX,baseY,qr};
+      perfCounters.impactMaskHits++;
+      out.mask=entry.mask;out.baseX=baseX;out.baseY=baseY;out.qr=qr;return out;
     }
+    perfCounters.impactMaskMisses++;
     const lim=Math.ceil(qr+1),r2=qr*qr;
     let mask;
     if(requireRadialOrder){
@@ -2841,7 +3110,7 @@
     while(impactMaskCache.size>IMPACT_MASK_CACHE_MAX){
       const oldest=impactMaskCache.keys().next().value;impactMaskCache.delete(oldest);
     }
-    return {mask,baseX,baseY,qr};
+    out.mask=mask;out.baseX=baseX;out.baseY=baseY;out.qr=qr;return out;
   }
 
   function applyImpact(gx,gy,r,faction,budget=Infinity,refreshOwned=false,pathStampId=0){
@@ -2861,7 +3130,7 @@
       }
       if(previous===faction){
         if(!refreshOwned)continue;
-        refreshTerritoryCell(idx,faction);refreshed=true;
+        if(refreshTerritoryCell(idx,faction))refreshed=true;
         continue;
       }
       const available=budget-spent;
@@ -2877,54 +3146,74 @@
       if(previous!==255)territoryCounts[previous]--;
       territoryCounts[faction]++;owner[idx]=faction;refreshTerritoryCell(idx,faction);changed++;
     }
-    if(changed||refreshed)markTerritoryDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
+    if(territoryGpuActive){
+      if(changed)markTerritoryOwnerDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
+      if(changed||refreshed)markTerritoryTickDirtyRect(gx-qr-1,gy-qr-1,gx+qr+1,gy+qr+1);
+    }
     return spent;
   }
 
-  function flushTerritory(force=false){
-    if(!dirtyTerritoryTileCount)return;
-    if(territoryGpuActive){
-      if(force||dirtyTerritoryTileCount>360)uploadTerritoryGpuFull();
-      else{
-        for(let ty=0;ty<TERRITORY_TILE_ROWS;ty++){
-          let tx=0;
-          while(tx<TERRITORY_TILE_COLS){
-            while(tx<TERRITORY_TILE_COLS&&!dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
-            if(tx>=TERRITORY_TILE_COLS)break;
-            const runStart=tx;
-            while(tx<TERRITORY_TILE_COLS&&dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
-            const x=runStart*TERRITORY_TILE_SIZE,y=ty*TERRITORY_TILE_SIZE;
-            const w=Math.min(GRID_W-x,(tx-runStart)*TERRITORY_TILE_SIZE),h=Math.min(GRID_H-y,TERRITORY_TILE_SIZE);
-            uploadTerritoryGpuRect(x,y,w,h);
-          }
-        }
-      }
-      dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
+  function flushTerritoryGpuTiles(mask,count,kind,force){
+    if(!count)return;
+    if(force||count>360){
+      uploadTerritoryGpuFull(kind==='owner',kind==='tick');
       return;
     }
+    for(let ty=0;ty<TERRITORY_TILE_ROWS;ty++){
+      let tx=0;
+      while(tx<TERRITORY_TILE_COLS){
+        while(tx<TERRITORY_TILE_COLS&&!mask[ty*TERRITORY_TILE_COLS+tx])tx++;
+        if(tx>=TERRITORY_TILE_COLS)break;
+        const runStart=tx;
+        while(tx<TERRITORY_TILE_COLS&&mask[ty*TERRITORY_TILE_COLS+tx])tx++;
+        const x=runStart*TERRITORY_TILE_SIZE,y=ty*TERRITORY_TILE_SIZE;
+        const w=Math.min(GRID_W-x,(tx-runStart)*TERRITORY_TILE_SIZE),h=Math.min(GRID_H-y,TERRITORY_TILE_SIZE);
+        if(kind==='owner')uploadTerritoryGpuOwnerRect(x,y,w,h);else uploadTerritoryGpuTickRect(x,y,w,h);
+      }
+    }
+  }
+
+  function flushTerritory(force=false){
+    if(territoryGpuActive){
+      if(!dirtyOwnerTileCount&&!dirtyTickTileCount)return;
+      flushTerritoryGpuTiles(dirtyOwnerTiles,dirtyOwnerTileCount,'owner',force);
+      flushTerritoryGpuTiles(dirtyTickTiles,dirtyTickTileCount,'tick',force);
+      dirtyOwnerTiles.fill(0);dirtyTickTiles.fill(0);dirtyOwnerTileCount=0;dirtyTickTileCount=0;
+      return;
+    }
+    if(!dirtyTerritoryColorTileCount)return;
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     // 大面积同时变化时整图上传更便宜；局部变化则按横向连续瓦片分段上传。
-    if(force||dirtyTerritoryTileCount>360){
+    if(force||dirtyTerritoryColorTileCount>360){
       territoryCtx.putImageData(territoryImage,0,0);
+      recordTerritoryUpload('color',GRID_W*GRID_H);
     }else{
       for(let ty=0;ty<TERRITORY_TILE_ROWS;ty++){
         let tx=0;
         while(tx<TERRITORY_TILE_COLS){
-          while(tx<TERRITORY_TILE_COLS&&!dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
+          while(tx<TERRITORY_TILE_COLS&&!dirtyTerritoryColorTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
           if(tx>=TERRITORY_TILE_COLS)break;
           const runStart=tx;
-          while(tx<TERRITORY_TILE_COLS&&dirtyTerritoryTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
+          while(tx<TERRITORY_TILE_COLS&&dirtyTerritoryColorTiles[ty*TERRITORY_TILE_COLS+tx])tx++;
           const x=runStart*TERRITORY_TILE_SIZE,y=ty*TERRITORY_TILE_SIZE;
           const w=Math.min(GRID_W-x,(tx-runStart)*TERRITORY_TILE_SIZE),h=Math.min(GRID_H-y,TERRITORY_TILE_SIZE);
           territoryCtx.putImageData(territoryImage,0,0,x,y,w,h);
+          recordTerritoryUpload('color',w*h);
         }
       }
     }
-    dirtyTerritoryTiles.fill(0);dirtyTerritoryTileCount=0;
+    dirtyTerritoryColorTiles.fill(0);dirtyTerritoryColorTileCount=0;
+    if(PERF_DEBUG_ACTIVE){perfTerritoryUploadMs+=performance.now()-perfStart;perfTerritoryUploadSamples++;}
   }
 
-  function paintProjectilePath(p,x1,y1,x2,y2){
+  function paintProjectilePath(p,x1,y1,x2,y2,out=paintPathResult){
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     let remaining=Math.max(0,Math.floor(p.firepower));
-    if(remaining<=0)return {spent:0,exhausted:true,x:x1,y:y1};
+    if(remaining<=0){
+      out.spent=0;out.exhausted=true;out.x=x1;out.y=y1;
+      if(PERF_DEBUG_ACTIVE){perfTerritoryPaintMs+=performance.now()-perfStart;perfTerritoryPaintSamples++;}
+      return out;
+    }
     const initialRadius=projectileTerritoryRadius(p);
     const length=Math.hypot(x2-x1,y2-y1),spacing=Math.max(1.1,Math.min(4.0,initialRadius*.92)),steps=Math.max(1,Math.ceil(length/spacing));
     const refreshOwned=p.kind==='orb'||p.kind==='scatter'||p.kind==='sniper';
@@ -2942,7 +3231,9 @@
       if(remaining<=0)break;
     }
     if(p.kind!=='orb')syncProjectileFirepower(p,remaining);
-    return {spent:spentTotal,exhausted:remaining<=0,x:lastX,y:lastY};
+    out.spent=spentTotal;out.exhausted=remaining<=0;out.x=lastX;out.y=lastY;
+    if(PERF_DEBUG_ACTIVE){perfTerritoryPaintMs+=performance.now()-perfStart;perfTerritoryPaintSamples++;}
+    return out;
   }
 
   function projectileTerritoryRadius(p){
@@ -2998,6 +3289,7 @@
   }
 
   function isOccupiedWarPoint(x,y){
+    perfCounters.machineTailChecks++;
     const gx=Math.max(0,Math.min(GRID_W-1,Math.floor(x/WV.w*GRID_W)));
     const gy=Math.max(0,Math.min(GRID_H-1,Math.floor(y/WV.h*GRID_H)));
     return owner[gy*GRID_W+gx]!==255;
@@ -3025,48 +3317,57 @@
     if(count){trailCtx.globalAlpha=alpha;trailCtx.strokeStyle=color;trailCtx.lineWidth=width*scale;trailCtx.stroke();}
   }
 
-  function renderSniperTrailHistory(dt){
-    for(let i=0;i<sniperTrailSegments.length;i+=6){
-      const x1=sniperTrailSegments[i],y1=sniperTrailSegments[i+1],x2=sniperTrailSegments[i+2],y2=sniperTrailSegments[i+3];
-      if(!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2))continue;
-      sniperTrailHistory.push({x1,y1,x2,y2,faction:sniperTrailSegments[i+4],age:0});
-    }
-    sniperTrailSegments.length=0;
-    for(let i=sniperTrailHistory.length-1;i>=0;i--){
-      const segment=sniperTrailHistory[i];segment.age+=dt;
-      if(segment.age>=SNIPER_TRAIL_LIFETIME){const last=sniperTrailHistory.pop();if(i<sniperTrailHistory.length)sniperTrailHistory[i]=last;}
-    }
+  function clearSniperTrailLayers(){
+    for(const layer of sniperTrailLayers){layer.ctx.clearRect(0,0,layer.canvas.width,layer.canvas.height);layer.hasContent=false;}
     sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
-    const scale=TRAIL_SCALE;
-    const bins=Array.from({length:SNIPER_TRAIL_FADE_LAYERS},()=>Array.from({length:FACTIONS.length},()=>[]));
-    for(const segment of sniperTrailHistory){
-      const layer=Math.min(SNIPER_TRAIL_FADE_LAYERS-1,Math.floor(segment.age/SNIPER_TRAIL_LIFETIME*SNIPER_TRAIL_FADE_LAYERS));
-      bins[layer][segment.faction].push(segment);
+    sniperTrailLayerHead=0;sniperTrailLayerElapsed=0;
+  }
+
+  function renderSniperTrailHistory(dt){
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
+    sniperTrailLayerElapsed+=dt;
+    while(sniperTrailLayerElapsed>=SNIPER_TRAIL_LAYER_SECONDS){
+      sniperTrailLayerElapsed-=SNIPER_TRAIL_LAYER_SECONDS;
+      sniperTrailLayerHead=(sniperTrailLayerHead+1)%SNIPER_TRAIL_LAYER_COUNT;
+      const recycled=sniperTrailLayers[sniperTrailLayerHead];recycled.ctx.clearRect(0,0,recycled.canvas.width,recycled.canvas.height);recycled.hasContent=false;
     }
-    sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='lighter';sniperTrailCtx.lineCap='round';sniperTrailCtx.lineJoin='round';
-    for(let layer=0;layer<SNIPER_TRAIL_FADE_LAYERS;layer++){
-      const minAge=SNIPER_TRAIL_LIFETIME*layer/SNIPER_TRAIL_FADE_LAYERS;
-      const maxAge=SNIPER_TRAIL_LIFETIME*(layer+1)/SNIPER_TRAIL_FADE_LAYERS;
-      const midpoint=(minAge+maxAge)*.5,fade=Math.pow(Math.max(0,1-midpoint/SNIPER_TRAIL_LIFETIME),1.35);
+    const active=sniperTrailLayers[sniperTrailLayerHead].ctx,scale=TRAIL_SCALE;
+    let acceptedSegments=0;
+    if(sniperTrailSegments.length){
+      active.save();active.globalCompositeOperation='lighter';
       for(let faction=0;faction<FACTIONS.length;faction++){
-        const color=FACTIONS[faction].color,segments=bins[layer][faction];
-        if(!segments.length)continue;
-        sniperTrailCtx.beginPath();
-        for(const segment of segments){
-          sniperTrailCtx.moveTo(segment.x1*scale,segment.y1*scale);sniperTrailCtx.lineTo(segment.x2*scale,segment.y2*scale);
+        let count=0;active.beginPath();
+        for(let i=0;i<sniperTrailSegments.length;i+=6){
+          if(sniperTrailSegments[i+4]!==faction)continue;
+          const x1=sniperTrailSegments[i],y1=sniperTrailSegments[i+1],x2=sniperTrailSegments[i+2],y2=sniperTrailSegments[i+3];
+          if(!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2))continue;
+          active.moveTo(x1*scale,y1*scale);active.lineTo(x2*scale,y2*scale);count++;
         }
-        sniperTrailCtx.globalAlpha=.12*fade;sniperTrailCtx.strokeStyle=color;sniperTrailCtx.lineWidth=8*scale;sniperTrailCtx.stroke();
-        sniperTrailCtx.beginPath();
-        for(const segment of segments){
-          sniperTrailCtx.moveTo(segment.x1*scale,segment.y1*scale);sniperTrailCtx.lineTo(segment.x2*scale,segment.y2*scale);
-        }
-        sniperTrailCtx.globalAlpha=.58*fade;sniperTrailCtx.strokeStyle=mixHexColors(color,'#ffffff',.64);sniperTrailCtx.lineWidth=2.1*scale;sniperTrailCtx.stroke();
+        if(!count)continue;
+        const color=FACTIONS[faction].color;acceptedSegments+=count;
+        active.globalAlpha=.12;active.strokeStyle=color;active.lineWidth=8*scale;active.stroke();
+        active.globalAlpha=.58;active.strokeStyle=mixHexColors(color,'#ffffff',.64);active.lineWidth=2.1*scale;active.stroke();
       }
+      active.restore();
+    }
+    if(acceptedSegments)sniperTrailLayers[sniperTrailLayerHead].hasContent=true;
+    sniperTrailSegments.length=0;perfCounters.sniperTrailSegments+=acceptedSegments;
+
+    sniperTrailCtx.clearRect(0,0,sniperTrailCanvas.width,sniperTrailCanvas.height);
+    sniperTrailCtx.save();sniperTrailCtx.globalCompositeOperation='lighter';sniperTrailCtx.imageSmoothingEnabled=true;
+    for(let ageLayer=SNIPER_TRAIL_LAYER_COUNT-1;ageLayer>=0;ageLayer--){
+      const midpoint=SNIPER_TRAIL_LAYER_SECONDS*(ageLayer+.5);
+      const index=(sniperTrailLayerHead-ageLayer+SNIPER_TRAIL_LAYER_COUNT)%SNIPER_TRAIL_LAYER_COUNT;
+      const layer=sniperTrailLayers[index];if(!layer.hasContent)continue;
+      sniperTrailCtx.globalAlpha=Math.pow(Math.max(0,1-midpoint/SNIPER_TRAIL_LIFETIME),1.35);
+      sniperTrailCtx.drawImage(layer.canvas,0,0);
     }
     sniperTrailCtx.restore();
+    if(PERF_DEBUG_ACTIVE)perfSniperTrailMs+=performance.now()-perfStart;
   }
 
   function renderTrailBatch(dt){
+    const perfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     fadeTrailLayer(dt);trailCtx.save();trailCtx.globalCompositeOperation='lighter';trailCtx.lineCap='round';trailCtx.lineJoin='round';
     for(let f=0;f<4;f++){
       const color=FACTIONS[f].color;
@@ -3076,6 +3377,7 @@
     trailCtx.restore();
     renderSniperTrailHistory(dt);
     frameTrailSegments.length=0;
+    if(PERF_DEBUG_ACTIVE){perfTrailUpdateMs+=performance.now()-perfStart;perfTrailSamples++;}
   }
 
   function releaseProjectile(index){
@@ -3596,6 +3898,7 @@
     if(sameFaction&&!friendlyOrbMachine&&!friendlyOrbPair)return false;
 
     const hit=sweptProjectilePairHit(p,q);if(!hit)return false;
+    perfCounters.projectilePairResolved++;
     // 弹丸可能在两次低频领土刷新之间相撞并消失；先补算双方到真实碰撞点的路径，
     // 保证已经触碰到的敌方领土不会因为弹丸提前销毁而漏占领。
     const pExhausted=paintProjectileBeforePairHit(p,hit.ax,hit.ay);
@@ -3636,6 +3939,7 @@
   }
 
   function resolveProjectileFirepowerInteractions(){
+    const broadphaseStart=PERF_DEBUG_ACTIVE?performance.now():0;let resolveDuration=0;
     currentOrbPairContacts.clear();
     for(const index of activeProjectileBuckets)projectileCollisionBuckets[index].length=0;
     activeProjectileBuckets.length=0;
@@ -3656,15 +3960,23 @@
           const nx=cx+ox;if(nx<0||nx>=PROJECTILE_HASH_COLS)continue;
             const list=projectileCollisionBuckets[ny*PROJECTILE_HASH_COLS+nx];
             for(let j=0;j<list.length;j++){
+              perfCounters.projectilePairCandidates++;
               if(!projectilePairMayInteract(p,list[j]))continue;
-              if(resolveProjectilePairInteraction(p,list[j]))break outer;
+              const resolveStart=PERF_DEBUG_ACTIVE?performance.now():0;
+              const remove=resolveProjectilePairInteraction(p,list[j]);
+              if(PERF_DEBUG_ACTIVE)resolveDuration+=performance.now()-resolveStart;
+              if(remove)break outer;
             }
         }
       }
       if(!p.dead){
         for(let j=0;j<activeOrbCollisionProjectiles.length;j++){
+          perfCounters.projectilePairCandidates++;
           if(!projectilePairMayInteract(p,activeOrbCollisionProjectiles[j]))continue;
-          if(resolveProjectilePairInteraction(p,activeOrbCollisionProjectiles[j]))break;
+          const resolveStart=PERF_DEBUG_ACTIVE?performance.now():0;
+          const remove=resolveProjectilePairInteraction(p,activeOrbCollisionProjectiles[j]);
+          if(PERF_DEBUG_ACTIVE)resolveDuration+=performance.now()-resolveStart;
+          if(remove)break;
         }
       }
       if(!p.dead){
@@ -3680,6 +3992,7 @@
       }
     }
     const swap=previousOrbPairContacts;previousOrbPairContacts=currentOrbPairContacts;currentOrbPairContacts=swap;
+    if(PERF_DEBUG_ACTIVE){const total=performance.now()-broadphaseStart;perfProjectileResolveMs+=resolveDuration;perfProjectileBroadphaseMs+=Math.max(0,total-resolveDuration);}
   }
 
   function currentMachineVisualGroupSteps(){
@@ -3843,10 +4156,8 @@
       }
     }
     if(!territoryGpuActive){
-      territoryFlashCarry+=dt;
-      if(territoryFlashCarry>=TERRITORY_FLASH_STEP){territoryFlashCarry%=TERRITORY_FLASH_STEP;updateTerritoryFlash();}
-      territoryBrightnessCarry+=dt;
-      if(territoryBrightnessCarry>=TERRITORY_BRIGHTNESS_STEP){territoryBrightnessCarry%=TERRITORY_BRIGHTNESS_STEP;updateTerritoryBrightness();}
+      territoryColorCarry+=dt;
+      if(territoryColorCarry>=TERRITORY_BRIGHTNESS_STEP){territoryColorCarry%=TERRITORY_BRIGHTNESS_STEP;updateTerritoryColors();}
     }
     if(territoryUploadCarry>=TERRITORY_UPLOAD_STEP){territoryUploadCarry%=TERRITORY_UPLOAD_STEP;flushTerritory();}
   }
@@ -3876,6 +4187,7 @@
     '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:50000000,avcCodec:'avc1.64002a',label:'1080P60 HQ'}),
     '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:120000000,avcCodec:'avc1.640033',label:'4K30 HQ'})
   });
+  const HQ_RENDER_RESULT=Object.freeze({STARTED:'started',FALLBACK:'fallback',CANCELLED:'cancelled'});
   const matchVideoCanvas=document.createElement('canvas');
   const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
   let matchRecorder=null,matchRecordingStream=null,matchRecordingWriter=null;
@@ -3904,7 +4216,7 @@
   function makeMatchVideoFileName(preset,mimeType){
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z').replace('T','-');
     const extension=mimeType.startsWith('video/mp4')?'mp4':'webm';
-    return `pixel-territory-war-v208-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
+    return `pixel-territory-war-v${BUILD_INFO.version}-render-${preset.width}x${preset.height}-${stamp}.${extension}`;
   }
 
   function updateMatchRecordingControls(){
@@ -3946,8 +4258,8 @@
   }
 
   async function startHighQualityMatchRender(){
-    if(matchVideoRenderActive||matchRecorder||matchRecordingPreparing)return true;
-    if(typeof VideoEncoder==='undefined')return false;
+    if(matchVideoRenderActive||matchRecorder||matchRecordingPreparing)return HQ_RENDER_RESULT.CANCELLED;
+    if(typeof VideoEncoder==='undefined')return HQ_RENDER_RESULT.FALLBACK;
     const preset=VIDEO_PRESETS[UI.videoResolution?.value]||VIDEO_PRESETS['1080'];
     matchRecordingPreparing=true;matchRecordingStatusText='准备高质量渲染…';updateMatchRecordingControls();
     let writer=null,fileHandle=null,output=null;
@@ -3971,7 +4283,7 @@
           types:[{description:'高质量渲染视频',accept:{[mime]:[extension]}}]
         });
         writer=await fileHandle.createWritable();
-      }else return false;
+      }else return HQ_RENDER_RESULT.FALLBACK;
 
       const {CanvasSource,Mp4OutputFormat,Output,Quality,StreamTarget,WebMOutputFormat}=await import('./vendor/mediabunny-renderer.mjs');
       matchVideoCanvas.width=preset.width;matchVideoCanvas.height=preset.height;
@@ -4034,7 +4346,7 @@
       }
       matchRecordingStatusText=VIDEO_RENDER_AUTOMATION?`已下载 · ${matchRecordingFinalReason}`:`已保存 · ${matchRecordingFinalReason}`;
       log(`高质量视频已渲染：${matchRecordingFileName} · ${matchVideoRenderEncoderMode}（${matchRecordingFinalReason}）`);
-      return true;
+      return HQ_RENDER_RESULT.STARTED;
     }catch(error){
       if(error?.name==='AbortError'){
         matchRecordingStatusText='已取消';
@@ -4043,13 +4355,18 @@
         matchRecordingStatusText='渲染失败';log(`高质量视频渲染失败：${error.message||error}`);
       }
       try{if(output&&output.state!=='finalized'&&output.state!=='canceled')await output.cancel();else if(writer)await writer.abort();}catch{}
-      return true;
+      return error?.name==='AbortError'?HQ_RENDER_RESULT.CANCELLED:HQ_RENDER_RESULT.FALLBACK;
     }finally{
       matchVideoRenderActive=false;matchVideoRenderStopRequested=false;matchVideoRenderOutput=null;videoRenderTimelineSeconds=null;
       matchRecordingPreparing=false;matchRecordingPreset=null;
       if(!VIDEO_RENDER_AUTOMATION){videoRenderSourceHeight=0;resize(true);}
       updateMatchRecordingControls();
     }
+  }
+
+  function resetRecordingState(){
+    matchRecorder=null;matchRecordingStream=null;matchRecordingWriter=null;matchRecordingAutomationFileHandle=null;matchRecordingPreset=null;
+    matchRecordingChunks=[];matchRecordingWriteChain=Promise.resolve();matchRecordingWriteError=null;matchRecordingPreparing=false;
   }
 
   async function finalizeMatchRecording(){
@@ -4080,8 +4397,7 @@
       log(`录像导出失败：${error.message||error}`);
       try{if(matchRecordingWriter)await matchRecordingWriter.abort();}catch{}
     }finally{
-      matchRecorder=null;matchRecordingStream=null;matchRecordingWriter=null;matchRecordingAutomationFileHandle=null;matchRecordingPreset=null;
-      matchRecordingChunks=[];matchRecordingWriteChain=Promise.resolve();matchRecordingWriteError=null;matchRecordingPreparing=false;
+      resetRecordingState();
       updateMatchRecordingControls();
     }
   }
@@ -4095,9 +4411,8 @@
     matchRecorder.stop();
   }
 
-  async function startMatchRecording(){
-    if(matchRecorder||matchRecordingPreparing)return;
-    if(await startHighQualityMatchRender())return;
+  async function startMediaRecorderRecording(){
+    if(matchVideoRenderActive||matchRecorder||matchRecordingPreparing)return;
     if(typeof MediaRecorder==='undefined'||typeof HTMLCanvasElement.prototype.captureStream!=='function'){
       matchRecordingStatusText='浏览器不支持';updateMatchRecordingControls();
       log('当前浏览器不支持 Canvas 视频录制，请使用最新版 Chrome、Edge 或 Safari。');
@@ -4170,6 +4485,14 @@
       matchRecordingStatusText='启动失败';updateMatchRecordingControls();log(`录像启动失败：${error.message||error}`);
       try{if(writer)await writer.abort();}catch{}
     }
+  }
+
+  async function startMatchRecording(){
+    if(matchVideoRenderActive||matchRecorder||matchRecordingPreparing)return;
+    const hqResult=await startHighQualityMatchRender();
+    if(hqResult===HQ_RENDER_RESULT.STARTED||hqResult===HQ_RENDER_RESULT.CANCELLED)return;
+    matchVideoRenderEncoderMode='MediaRecorder fallback';matchRecordingStatusText='回退普通录像…';updateMatchRecordingControls();
+    await startMediaRecorderRecording();
   }
 
   window.__matchCaptureInfo=()=>({
@@ -4789,10 +5112,10 @@
     for(const b of balls){
       if(eliminated[b.faction])continue;
       lctx.save();
-      for(let k=0;k<b.trail.length;k++){
-        const pt=b.trail[k],a=(k+1)/Math.max(1,b.trail.length);
+      for(let k=0;k<b.trailCount;k++){
+        const index=(b.trailHead-b.trailCount+k+BALL_TRAIL_CAPACITY)%BALL_TRAIL_CAPACITY,a=(k+1)/Math.max(1,b.trailCount);
         lctx.globalAlpha=a*.18;lctx.fillStyle=FACTIONS[b.faction].color;lctx.shadowColor=FACTIONS[b.faction].color;lctx.shadowBlur=7;
-        lctx.beginPath();lctx.arc(pt[0],pt[1],Math.max(1.5,b.r*.48*a),0,TAU);lctx.fill();
+        lctx.beginPath();lctx.arc(b.trailX[index],b.trailY[index],Math.max(1.5,b.r*.48*a),0,TAU);lctx.fill();
       }
       lctx.globalAlpha=1;lctx.shadowColor=FACTIONS[b.faction].color;lctx.shadowBlur=20;
       lctx.fillStyle='rgba(1,7,17,.96)';lctx.strokeStyle=FACTIONS[b.faction].color;lctx.lineWidth=2.4;
@@ -5041,10 +5364,12 @@
     const t=getVisualTimeSeconds();
     wctx.imageSmoothingEnabled=true;wctx.imageSmoothingQuality='high';wctx.drawImage(battleStaticCanvas,0,0,WV.w,WV.h);
     if(territoryGpuActive)renderTerritoryGpu();
-    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?territoryGpuCanvas:territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
+    wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?getTerritoryRenderCanvas():territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.fillStyle='rgba(0,5,14,.11)';wctx.fillRect(0,0,WV.w,WV.h);
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=.98;wctx.imageSmoothingEnabled=true;wctx.drawImage(sniperTrailCanvas,0,0,WV.w,WV.h);wctx.drawImage(trailCanvas,0,0,WV.w,WV.h);wctx.restore();
+    const preparePerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     prepareProjectileRenderFrame();
+    if(PERF_DEBUG_ACTIVE)perfRenderPrepareMs+=performance.now()-preparePerfStart;
 
     // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
 
@@ -5056,6 +5381,7 @@
     }
     wctx.restore();
 
+    const machinePerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     const strokeMachineVelocityTails=(width,alpha,color,lengthScale=1)=>{
       let count=0;wctx.beginPath();
       const short=lengthScale!==1;
@@ -5097,8 +5423,10 @@
       if(hasMachineSpark){wctx.globalAlpha=.88;wctx.fillStyle=palette.machineSpark;wctx.fill();}
     }
     wctx.restore();
+    if(PERF_DEBUG_ACTIVE)perfRenderMachineMs+=performance.now()-machinePerfStart;
 
     // 狙击弹：单枚 3.5px 弹体，叠加一段随速度方向延伸的高亮头部，与独立长尾迹层衔接。
+    const sniperPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.lineCap='round';
     for(const p of renderSniperProjectiles){
       const color=FACTIONS[p.faction].color,light=mixHexColors(color,'#ffffff',.78);
@@ -5113,8 +5441,10 @@
       wctx.globalAlpha=.92;wctx.strokeStyle=light;wctx.lineWidth=.7;wctx.beginPath();wctx.arc(p.x,p.y,p.r,0,TAU);wctx.stroke();
     }
     wctx.restore();
+    if(PERF_DEBUG_ACTIVE)perfRenderSniperMs+=performance.now()-sniperPerfStart;
 
     // v137：参考能量核心视觉，使用阵营色构建高亮核心、双层能量环、旋转弧段和轨道粒子。
+    const orbPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     wctx.save();
     const drawOrbProjectile=orb=>{
       const factionColor=FACTIONS[orb.faction].color;
@@ -5203,9 +5533,12 @@
     };
     for(const p of renderOrbProjectiles)drawOrbProjectile(p);
     wctx.restore();
+    if(PERF_DEBUG_ACTIVE)perfRenderOrbMs+=performance.now()-orbPerfStart;
 
     // v144：捕获后的机枪弹在大球壳体之上绘制，才能清晰看到其螺旋坠入中心。
+    const absorptionPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     drawOrbAbsorptionTrails();
+    if(PERF_DEBUG_ACTIVE)perfRenderEffectsMs+=performance.now()-absorptionPerfStart;
 
     wctx.save();wctx.globalCompositeOperation='lighter';
     let hasCore=false;wctx.beginPath();
@@ -5235,8 +5568,10 @@
       wctx.fillStyle='#eefbff';wctx.fillText(label,p.x,labelY);
     }
     wctx.restore();
+    const effectsPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     for(const b of beams){const a=Math.min(1,b.life*6);wctx.save();wctx.globalAlpha=a;wctx.lineCap='round';wctx.globalCompositeOperation='lighter';wctx.strokeStyle=FACTIONS[b.faction].color;wctx.lineWidth=7;wctx.beginPath();wctx.moveTo(b.x1,b.y1);wctx.lineTo(b.x2,b.y2);wctx.stroke();wctx.strokeStyle='#f8ffff';wctx.lineWidth=1.3;wctx.beginPath();wctx.moveTo(b.x1,b.y1);wctx.lineTo(b.x2,b.y2);wctx.stroke();wctx.restore();}
     drawWarEffects();
+    if(PERF_DEBUG_ACTIVE)perfRenderEffectsMs+=performance.now()-effectsPerfStart;
 
     for(let f=0;f<4;f++){
       const bx=FACTIONS[f].base[0]*WV.w,by=FACTIONS[f].base[1]*WV.h,col=FACTIONS[f].color,physicalRadius=shieldRadiusForFaction(f);
@@ -5290,8 +5625,30 @@
 
   let renderAccumulatorMs=0,simAccumulator=0,warSimulationCarry=0,droppedSimulationTime=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
   let perfSimMs=0,perfBallsMs=0,perfWarSimMs=0,perfWarMoveMs=0,perfWarPairMs=0,perfWarPaintMs=0,perfWarMs=0,perfLeftMs=0,perfFrameSamples=0,perfBallSteps=0,perfSimSteps=0,perfRenderSamples=0;
-  let perfTiming={simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,warMsPerRender:0,leftMsPerRender:0};
-  window.__perfDebug=()=>({displayFps,projectiles:projectiles.length,droppedSimulationTime,simAccumulator,territoryGpuActive,territoryDirtyTiles:dirtyTerritoryTileCount,...perfTiming});
+  let perfTerritoryPaintMs=0,perfTerritoryUploadMs=0,perfProjectileBroadphaseMs=0,perfProjectileResolveMs=0,perfTrailUpdateMs=0,perfSniperTrailMs=0;
+  let perfRenderPrepareMs=0,perfRenderMachineMs=0,perfRenderSniperMs=0,perfRenderOrbMs=0,perfRenderEffectsMs=0;
+  let perfTerritoryPaintSamples=0,perfTerritoryUploadSamples=0,perfTrailSamples=0;
+  const perfCounters={
+    territoryUploadRects:0,territoryUploadPixels:0,ownerUploadRects:0,ownerUploadPixels:0,tickUploadRects:0,tickUploadPixels:0,
+    impactMaskHits:0,impactMaskMisses:0,projectilePairCandidates:0,projectilePairResolved:0,machineTailChecks:0,
+    sniperTrailSegments:0,projectilePeakCount:0
+  };
+  let perfTiming={
+    simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,
+    territoryPaintMs:0,territoryUploadMs:0,projectileBroadphaseMs:0,projectileResolveMs:0,trailMs:0,sniperTrailMs:0,
+    renderPrepareMs:0,renderMachineMs:0,renderSniperMs:0,orbRenderMs:0,renderEffectsMs:0,warMsPerRender:0,leftMsPerRender:0
+  };
+  window.__perfDebug=()=>({
+    displayFps,projectiles:projectiles.length,projectilePool:projectilePool.length,balls:balls.length,effects:pulses.length,
+    droppedSimulationTime,simAccumulator,territoryGpuActive,territoryGpuBackend,territoryGpuRenderer,
+    territoryDirtyTiles:territoryGpuActive?dirtyOwnerTileCount+dirtyTickTileCount:dirtyTerritoryColorTileCount,
+    territoryOwnerDirtyTiles:dirtyOwnerTileCount,territoryTickDirtyTiles:dirtyTickTileCount,
+    ...perfTiming,...perfCounters,projectilePoolSize:projectilePool.length
+  });
+  window.__perfReset=()=>{
+    for(const key of Object.keys(perfCounters))perfCounters[key]=0;
+    perfCounters.projectilePeakCount=projectiles.length;
+  };
   function simulateStep(dt){
     territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
     if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
@@ -5354,36 +5711,84 @@
           warMoveMsPerStep:perfWarMoveMs/Math.max(1,perfSimSteps),
           warPairMsPerStep:perfWarPairMs/Math.max(1,perfSimSteps),
           warPaintMsPerStep:perfWarPaintMs/Math.max(1,perfSimSteps),
+          territoryPaintMs:perfTerritoryPaintMs/Math.max(1,perfTerritoryPaintSamples),
+          territoryUploadMs:perfTerritoryUploadMs/Math.max(1,perfTerritoryUploadSamples),
+          projectileBroadphaseMs:perfProjectileBroadphaseMs/Math.max(1,perfSimSteps),
+          projectileResolveMs:perfProjectileResolveMs/Math.max(1,perfSimSteps),
+          trailMs:perfTrailUpdateMs/Math.max(1,perfTrailSamples),
+          sniperTrailMs:perfSniperTrailMs/Math.max(1,perfTrailSamples),
+          renderPrepareMs:perfRenderPrepareMs/Math.max(1,perfRenderSamples),
+          renderMachineMs:perfRenderMachineMs/Math.max(1,perfRenderSamples),
+          renderSniperMs:perfRenderSniperMs/Math.max(1,perfRenderSamples),
+          orbRenderMs:perfRenderOrbMs/Math.max(1,perfRenderSamples),
+          renderEffectsMs:perfRenderEffectsMs/Math.max(1,perfRenderSamples),
           warMsPerRender:perfWarMs/Math.max(1,perfRenderSamples),
           leftMsPerRender:perfLeftMs/Math.max(1,perfRenderSamples)
         };
         perfSimMs=perfBallsMs=perfWarSimMs=perfWarMoveMs=perfWarPairMs=perfWarPaintMs=perfWarMs=perfLeftMs=0;perfFrameSamples=perfBallSteps=perfSimSteps=perfRenderSamples=0;
+        perfTerritoryPaintMs=perfTerritoryUploadMs=perfProjectileBroadphaseMs=perfProjectileResolveMs=perfTrailUpdateMs=perfSniperTrailMs=0;
+        perfRenderPrepareMs=perfRenderMachineMs=perfRenderSniperMs=perfRenderOrbMs=perfRenderEffectsMs=0;
+        perfTerritoryPaintSamples=perfTerritoryUploadSamples=perfTrailSamples=0;
       }
     }
     if(!bootFrameCompleted){bootFrameCompleted=true;if(bootNotice)bootNotice.classList.add('hidden');}
     requestAnimationFrame(frame);
   }
 
-  function resetGame(){
-    while(projectiles.length){const p=projectiles.pop();p.orbShieldContacts=0;projectilePool.push(p);}
-    balls.length=beams.length=pulses.length=fireQueue.length=0;
-    for(let i=0;i<4;i++){
+  function resetGameState(){
+    globalStartValueMultiplier=1;simulationElapsed=0;paused=false;simAccumulator=0;warSimulationCarry=0;droppedSimulationTime=0;
+    renderAccumulatorMs=0;leftRenderAccumulatorMs=0;gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
+    for(const key of Object.keys(perfCounters))perfCounters[key]=0;
+  }
+
+  function resetFactionState(){
+    for(let i=0;i<FACTIONS.length;i++){
       STOCK_KEYS.forEach(key=>stocks[i][key]=0);
       shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;
       shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;
       powerHistory[i].length=0;powerHistory[i].push({t:0,v:1});
     }
     lastPowerHistoryTime=0;
-    previousOrbPairContacts.clear();currentOrbPairContacts.clear();
-    resetTopHitCounts();
-    buildPegRotors();resetTerritory();initializeFixedBallPool();
-    simulationElapsed=0;updateConverterLayout(0);paused=false;simAccumulator=0;warSimulationCarry=0;droppedSimulationTime=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;
-    gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
+  }
+
+  function resetMatrixState(){
+    balls.length=0;resetTopHitCounts();buildPegRotors();initializeFixedBallPool();
+  }
+
+  function resetBattleState(){
+    machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);
+    for(const group of machineVisualGroups){group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;}
+    for(let i=0;i<FACTIONS.length;i++){cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;}
+    sniperAimJobs.length=0;nextSniperAimId=1;
+  }
+
+  function resetProjectileState(){
+    while(projectiles.length){const p=projectiles.pop();p.orbShieldContacts=0;projectilePool.push(p);}
+    fireQueue.length=0;previousOrbPairContacts.clear();currentOrbPairContacts.clear();activeOrbCollisionProjectiles.length=0;
+    for(const index of activeProjectileBuckets)projectileCollisionBuckets[index].length=0;
+    activeProjectileBuckets.length=0;renderOrbProjectiles.length=0;renderOtherProjectiles.length=0;renderSniperProjectiles.length=0;renderMachineProjectiles.length=0;
+    for(let f=0;f<FACTIONS.length;f++){renderOtherProjectilesByFaction[f].length=0;renderMachineProjectilesByFaction[f].length=0;}
+  }
+
+  function resetEffectsState(){
+    beams.length=0;pulses.length=0;frameTrailSegments.length=0;sniperTrailSegments.length=0;
+    trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;
+    trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);clearSniperTrailLayers();
+  }
+
+  function rebuildRequiredCaches(){updateConverterLayout(0);}
+
+  function updateUIAfterReset(){
     if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
     if(UI.feed)UI.feed.innerHTML='';
     updateBaseTextCaches();
     log(`战场已重置：运行时间不设上限；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒后结束本局。`);
     updateStocks();updateStats();
+  }
+
+  function resetGame(){
+    resetGameState();resetFactionState();resetMatrixState();resetTerritoryState();resetBattleState();resetProjectileState();resetEffectsState();
+    rebuildRequiredCaches();updateUIAfterReset();
   }
 
   UI.factionButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.factionButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedFaction=Number(btn.dataset.faction);updateStocks();updateStats();}));
@@ -5405,90 +5810,25 @@
     if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
     resetGame();
   });
-  resetTopHitCounts();
-  initTerritoryGpu();resetTerritory();initializeFixedBallPool();updateBaseTextCaches();updateTerritoryRendererBadge();
-  for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
-  lastPowerHistoryTime=0;
-  updateStocks();updateStats();
-  log('Demo v147 已启动：火力生成矩阵运动速度调整为当前 80%，战场模拟与页面渲染帧率保持不变。');
-  log('Demo v148 已启动：乘区底边增加单向挡板；弹珠落入下层后不能再返回上层。');
-  log('Demo v149 已启动：中央空隙段挡板改为低透明度柔化显示，碰撞规则保持不变。');
-  log('Demo v150 已启动：弹珠向下穿过中央挡板时保留原始位置与动量，仅拦截下层向上的回穿。');
-  log('Demo v151 已启动：升力端点调整为半径 6px 对应 15000、半径 25px 对应 110。');
-  log('Demo v152 已启动：弹珠互撞与转盘碰撞点的单次动能损失调整为 10%，速度保留系数为 √0.90。');
-  log('Demo v153 已启动：四个转盘统一转速调整为原设定的 80%，当前角速度为 2.52。');
-  log('Demo v154 已启动：弹珠速度越高，碰撞恢复系数与侧壁额外冲量越低，避免高速碰撞持续放大速度。');
-  log('Demo v155 已启动：顶部新增已兑现小球直径统计。');
-  log('Demo v156 已启动：已兑现小球改为按 12–20、20–30、30–40、40px以上区间统计数量。');
-  log('Demo v157 已启动：残余火力不足一格时仍可完成最后一格占领；每淘汰一个阵营，后续弹珠起始数值乘 8。');
-  log('Demo v158 已启动：已兑现小球直径统计改为每 2px 一个区间，50px及以上归入末档。');
-  log('Demo v159 已启动：已兑现小球直径区间改为紧凑柱状图，柱高表示各区间数量，悬停可查看精确区间与数量。');
-  log('Demo v160 已启动：已兑现小球直径统计细化为每 0.5px 一个区间，50px及以上归入末档。');
-  log('Demo v161 已启动：狙击改为单枚直径 3.5px、占领半径 3px；发射前进行 5–6 秒随机减速锁定，锁定后 1 秒发射，并启用长持续尾迹。');
-  log('Demo v162 已启动：狙击尾迹改为按独立轨迹段年龄分层衰减，最长可见约 10 秒，避免连续叠加造成永久残留观感。');
-  log('Demo v163 已启动：狙击随机扫描延长至 10–12 秒，目标切换间隔由 0.15 秒渐进到 0.8 秒，并替换为四向准星瞄准器动画。');
-  log('Demo v164 已启动：火力兑现区两侧端口的线性扩展时间由 20 分钟延长至 30 分钟，之后固定为 1:1:1:1:1。');
-  log('Demo v165 已启动：狙击锁定准星统一采用发射阵营色，并固定朝向不再旋转。');
-  log('Demo v166 已启动：狙击锁定效果的准星与连线线宽统一调整为原来的 140%。');
-  log('Demo v167 已启动：狙击锁定层改为不透明 source-over 合成，并在战场全部元素之后置顶绘制。');
-  log('Demo v168 已启动：火力兑现区按 0:1:1.5:1:0 开局，20 分钟线性过渡至并固定为 1:1:1:1:1。');
-  log('Demo v169 已启动：阵营淘汰后保留已发射弹丸；未结算机枪与生成区弹珠转为随机方向大球。');
-  log('Demo v170 已启动：累计火力数据条改为单栏展示，界面信息密度进一步收敛。');
-  log('Demo v171 已启动：火力兑现区默认显示武器基础色，弹珠结算后短暂叠加对应阵营高亮。');
-  log('Demo v172 已启动：火力兑现区默认改为中性无色，高亮饱和度增强并延长衰减时间。');
-  log('Demo v173 已启动：兑现区默认层进一步收敛为纯灰阶，移除残留的蓝色标签与边框偏色。');
-  log('Demo v54 已启动：4 个 7 点转盘的轨道半径保持 v53 的 300% 尺寸，碰撞点恢复为 4.1px，转速提高到 v53 的 2 倍。');
-  log('Demo v55 已启动：底部战场规则说明已移除，火力生成矩阵已扩大。');
-  log(`Demo v78 已启动：当前使用 ${PERF_PROFILE.name}；已加入移动端降级、ResizeObserver 回退和启动状态提示。`);
-  log('Demo v79 已启动：中央空隙改为按弹珠直径选择性向上力场；直径越大，受到的升力越弱，大球可自然进入下层。');
-  log('Demo v81 已启动：升力仅按当前弹珠直径连续衰减，不再随运行时间变化；高速下坠仍可凭惯性突破。');
-  log('Demo v75 已启动：倍率增幅区的乘区分界线已实体化；小球在倍率区内触碰各分界边时会直接发生碰撞反弹。');
-  log('Demo v68 已启动：火力生成矩阵左右两侧已加入反弹壁；小球触壁时会额外获得当前速度 2 倍的水平向左冲量，并带有短接触冷却以避免贴墙连锁触发。');
-  log('Demo v73 已启动：模拟速度范围扩大为 0.25×–10×，并加入实时倍率显示与动态模拟步数上限。');
-  log('Demo v74 已启动：左右反弹壁触发后，小球最终合速度限制为 1100px/s，保留向左 2 倍冲量但阻止速度无限累积。');
-  log('Demo v69 已启动：顶部“阵营选择”已重构为四方累计火力曲线，并采用对数纵轴标注；点击图例仍可切换当前阵营查看武器累计火力。');
-  log('Demo v72 已启动：时间轴在 30 秒内固定显示 0–30 秒，超过 30 秒后保留从 0 秒开始的全部历史并压缩显示，不再滚动或丢弃最前端数据。');
-  log('Demo v71 已启动：火力曲线时间轴改为动态展开与滚动窗口，补入 0 秒起点，并将首尾标签向图表内部对齐。');
-  log('Demo v70 已启动：累计火力曲线已增加有限值饱和与对数刻度数量限制，修复极大火力导致页面冻结、无法预览的问题。');
-  log('Demo v96 已启动：冲击遮罩加入 LRU；中立网格重置改为批量复制；加入领土密度目标评分。');
-  log('Demo v111 已启动：火力生成矩阵采用分层规则栏与窄屏单列布局；碰撞加入高速微步、同心拆分、静态接触复检和对称侧壁反弹。');
-  log('Demo v112 已启动：矩阵内部区域标识移入左侧安全轨道；力场与端口标签降噪；命中脉冲下沉并裁剪到对应物理区。');
-  log('Demo v113 已启动：机枪转换口缩为原宽度 85%，护盾缩为 90%；释放宽度按霰弹、大球、狙击原有 1:2:1 比例重新分配。');
-  log('Demo v114 已启动：机枪单发火力以 400K=100%、10M=50% 为锚点连续衰减，机枪池无限增大时趋近 25%。');
-  log('Demo v116 已启动：机枪衰减同步作用于伤害和弹药池消耗，每次结算后的有效火力统一向上取整。');
-  log('Demo v118 已启动：撤销左侧转盘直径放大，四个转盘恢复统一尺寸；移除不参与弹珠碰撞的装饰外圈。');
-  log('Demo v119 已启动：移除弹珠本体之外的动态外圈，保留弹珠主体、阵营描边、数值和物理碰撞半径。');
-  log('Demo v120 已启动：弹珠互撞与上下层转盘碰撞点统一为 5% 可耗散动能损失，速度保留系数为 √0.95。');
-  log('Demo v121 已启动：弹珠绘制半径与碰撞半径统一；四个转盘角速度统一为 3.15，并保留交替旋转方向。');
-  log(`Demo v140 已启动：领土归属与占领时间保留在 CPU，亮度衰减交由 WebGL2 片元着色器；当前为 ${territoryGpuActive?'GPU':'CPU 回退'} 领土层。`);
-  log('Demo v139 已启动：同物理步领土刷新去重；占领热路径内联；弹丸碰撞复用命中缓冲并缓存数值类型；亮度与视觉参数保持 v138 一致。');
-  log('Demo v138 已启动：大球与普通弹丸采用分层空间碰撞；领土衰减改为无损 RGBA 查表；战场弹丸按弹种与阵营一次分类后批量绘制；完整冲击圆跳过无意义排序。');
-  log('Demo v137 已启动：大球采用高亮能量核心、双层环、旋转弧段和阵营色轨道粒子；吸收己方机枪弹时播放弧线汇入、收束光点、内缩环与局部白热弧动画。');
-  log('Demo v136 已启动：大球饱和直径上限由 250px 提高到 400px；火力兑现端口达到 1:1:1:1:1 的线性过渡时间由 15 分钟延长到 20 分钟。');
-  log('Demo v135 已启动：五个火力兑现端口从开局 0:1:1:1:0 线性过渡，在模拟 15:00 达到 1:1:1:1:1 后固定；物理边界、命中归属与标签同步更新。');
-  log('Demo v134 已启动：领土亮度更新提高到每秒 10 次；外圈转盘碰撞点与弹珠进行双向角动量交换，转盘受击后由驱动力平滑回归基础转速。');
-  log('Demo v133 已启动：移除领土临界随机闪点；新占领方格在 0 秒以原亮度 200% 闪现，0.5 秒回落至原亮度后继续执行 30 秒衰减。');
-  log('Demo v132 已启动：大球、霰弹、狙击刷新途经己方领土时间；机枪火力显示一位小数；移除基地黑圆；淘汰奖励按击杀方 +2、其余存活方 +1 发放弹珠。');
-  log('Demo v131 已启动：大球、霰弹与狙击不再写入跨帧轨迹；领土方格从新占领高亮在 30 秒内平滑衰减至阵营基础亮度。');
-  log('Demo v128 已启动：机枪光纤尾迹增加靠近弹头的渐亮短段，并加入少量高亮主节点；所有线段仍绑定当前弹丸。');
-  log('Demo v204 已启动：乘区视觉改为参考图式的深色槽体、厚玻璃隔板、发光底托和中央 UPGRADE 力场；分区宽度、碰撞与结算规则保持不变。');
-  log('Demo v205 已启动：火力生成矩阵上层两侧新增向内下斜的玻璃挡板，提供导流与真实碰撞。');
-  log('Demo v206 已启动：两侧乘区挡板改为圆角矩形，宽度调整为 v205 的 120%，视觉厚度与碰撞厚度同步。');
-  log('Demo v207 已启动：移除火力生成矩阵上层两侧挡板；乘区内部隔板和底部单向挡板保持不变。');
-  log('Demo v208 已启动：上方弹珠出生区横向宽度收窄至原来的 70%，出生基准线与初始投放范围同步。');
-  log('Demo v209 已启动：乘区底部单向挡板改为横向胶囊形，碰撞规则保持不变。');
-  log('Demo v210 已启动：乘区内部分隔挡板改为竖向胶囊形，碰撞规则保持不变。');
-  log('Demo v211 已启动：乘区内部分隔挡板延伸并接入底部挡板，视觉上合并为连续结构。');
-  log('Demo v212 已启动：删除旧挡板绘制，重构为参考图式的连续玻璃底轨、斜切立柱与立体接脚。');
-  log('Demo v213 已启动：去掉挡板侧面厚度、外扩侧面和底部斜接脚装饰。');
-  log('Demo v186 已启动：火力生成矩阵在 v185 基础上减速至 80%，当前为原始速度的 64%；战场与渲染帧率不变。');
-  log('Demo v185 已启动：弹珠恢复原黑芯霓虹外观；碰撞质量按 r³ 计算，并加入切向动量、自转与分离式转盘驱动力。');
-  log('Demo v184 已启动：固定帧渲染优先使用 H.264 GPU 编码；1080P 为 50 Mbps、4K 为 120 Mbps，不支持时自动回退 VP9 HQ。');
-  setInterval(updateStats,250);requestAnimationFrame(frame);
-  if(AUTO_RECORD_AT_LOAD){
-    if(speedRange){speedRange.value='1';updateSpeedControl();}
-    setTimeout(()=>startMatchRecording(),1200);
+  async function bootGame(){
+    await initTerritoryRenderer();
+    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
+    for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
+    lastPowerHistoryTime=0;
+    updateStocks();updateStats();
+    log(`${BUILD_INFO.name} v${BUILD_INFO.version} ready · ${PERF_PROFILE.name} · ${territoryGpuBackend} territory`);
+    setInterval(updateStats,250);requestAnimationFrame(frame);
+    if(AUTO_RECORD_AT_LOAD){
+      if(speedRange){speedRange.value='1';updateSpeedControl();}
+      setTimeout(()=>startMatchRecording(),1200);
+    }
   }
+  void bootGame().catch(error=>{
+    console.error('游戏启动失败：',error);
+    activateTerritoryCpuFallback('GPU 渲染器启动异常');
+    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
+    updateStocks();updateStats();setInterval(updateStats,250);requestAnimationFrame(frame);
+  });
 })();
 </script>
 </body>
