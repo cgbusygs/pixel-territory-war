@@ -6,16 +6,17 @@
   <link rel="icon" href="data:," />
   <title>Pixel Territory War v216-webgpu</title>
   <style>
+    /* TOKENS */
     :root{
-      --text:#f4fbff;
-      --muted:#7e9bb7;
-      --cyan:#19dfff;
-      --blue:#3487ff;
-      --violet:#8a48ff;
-      --magenta:#ff36dd;
-      --danger:#ff465f;
-      --panel:#050b18;
-      --line:rgba(65,157,255,.36);
+      --text:#eaf8ff;
+      --muted:#7fa7bd;
+      --cyan:#18e7ff;
+      --blue:#197dff;
+      --violet:#6074ff;
+      --magenta:#ef4bc6;
+      --danger:#ff6075;
+      --panel:#020a16;
+      --line:rgba(41,210,255,.34);
     }
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;color:var(--text);font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;background:#01040c}
@@ -23,24 +24,25 @@
       padding:14px;
       overflow-x:hidden;
       background:
-        radial-gradient(circle at 8% 4%,rgba(26,100,255,.18),transparent 29%),
-        radial-gradient(circle at 92% 8%,rgba(255,34,182,.12),transparent 31%),
-        radial-gradient(circle at 50% 110%,rgba(33,220,255,.08),transparent 40%),
-        linear-gradient(180deg,#030818 0%,#01040b 56%,#000207 100%);
+        radial-gradient(circle at 10% 2%,rgba(0,111,184,.19),transparent 31%),
+        radial-gradient(circle at 88% 7%,rgba(0,83,160,.14),transparent 34%),
+        radial-gradient(circle at 52% 106%,rgba(0,218,255,.07),transparent 42%),
+        linear-gradient(180deg,#020915 0%,#010611 54%,#00040b 100%);
     }
     body::before{
-      content:"";position:fixed;inset:0;pointer-events:none;z-index:20;opacity:.38;
+      content:"";position:fixed;inset:0;pointer-events:none;z-index:20;opacity:.31;
       background:
-        repeating-linear-gradient(0deg,rgba(255,255,255,.017) 0,rgba(255,255,255,.017) 1px,transparent 1px,transparent 4px),
-        linear-gradient(90deg,transparent 0 49.9%,rgba(23,217,255,.025) 50%,transparent 50.1%);
+        repeating-linear-gradient(0deg,rgba(160,231,255,.014) 0,rgba(160,231,255,.014) 1px,transparent 1px,transparent 4px),
+        repeating-linear-gradient(90deg,transparent 0,transparent 79px,rgba(32,204,255,.018) 80px);
       mix-blend-mode:screen;
     }
     body::after{
       content:"";position:fixed;inset:0;pointer-events:none;z-index:19;
-      background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.58) 100%);
+      background:radial-gradient(ellipse at center,transparent 48%,rgba(0,3,10,.67) 100%);
     }
     button,input,select{font:inherit}
     button{-webkit-tap-highlight-color:transparent}
+    /* LAYOUT */
     .app{max-width:1800px;margin:auto;position:relative;z-index:1}
     .topbar{
       display:flex;gap:16px;align-items:center;justify-content:space-between;
@@ -70,6 +72,7 @@
     .subtitle{font-size:11px;color:#7d9bb8;margin-top:4px;letter-spacing:.08em}
     .toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
     .toolbar label{font-size:11px;color:#8ca8c1;letter-spacing:.05em}
+    /* HUD */
     .top-counters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:-2px 0 12px}
     .counter-card{padding:9px 12px;border:1px solid rgba(50,145,226,.42);background:linear-gradient(180deg,rgba(6,16,34,.92),rgba(3,9,22,.96));box-shadow:0 0 18px rgba(20,100,220,.08),inset 0 0 18px rgba(30,120,220,.07);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));}
     .counter-title{font-size:11px;color:#8eb9d7;letter-spacing:.12em;margin-bottom:6px}
@@ -107,6 +110,7 @@
     .record-status{min-width:72px;text-align:center;white-space:nowrap}
     .record-status.recording{color:#fff0f3;border-color:#ff5069;background:rgba(63,10,24,.82);box-shadow:0 0 12px rgba(255,62,88,.25)}
     .stage-169{--stage-pad:124px;width:min(100%,1680px,calc((100vh - var(--stage-pad))*16/9));aspect-ratio:16/9;margin:0 auto}.layout{display:grid;grid-template-columns:minmax(0,43fr) minmax(0,57fr);gap:12px;align-items:stretch;height:100%}
+    /* PANELS */
     .panel{
       min-width:0;padding:10px;position:relative;isolation:isolate;display:flex;flex-direction:column;height:100%;
       border:1px solid rgba(47,131,226,.54);background:linear-gradient(180deg,rgba(6,15,33,.975),rgba(2,6,16,.985));
@@ -137,6 +141,7 @@
     .matrix-rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;min-width:0}
     .matrix-rule{min-width:0;display:flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid rgba(62,132,183,.32);background:linear-gradient(90deg,rgba(18,73,106,.22),rgba(4,17,32,.78));font:700 9px/1.15 "Microsoft YaHei",sans-serif;letter-spacing:.04em;color:#9fc2d8;white-space:nowrap;overflow:hidden}
     .matrix-rule b{flex:0 0 auto;color:#25e3ff;font:800 8px/1 monospace;letter-spacing:.08em}
+    /* CANVAS */
     .canvas-wrap{
       position:relative;border:1px solid rgba(42,112,178,.56);background:#010611;overflow:hidden;min-height:0;
       box-shadow:inset 0 0 48px rgba(15,83,160,.20),0 0 12px rgba(19,102,208,.08);
@@ -206,7 +211,7 @@
     .feed div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
     .badge{padding:3px 7px;border:1px solid rgba(55,101,143,.7);border-radius:1px;font:10px/1.2 monospace;color:#9ab8cf;background:rgba(5,16,31,.62);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px))}
     .badge.warning{color:#ffd6a1;border-color:rgba(255,152,76,.82);box-shadow:0 0 8px rgba(255,132,50,.18)}
-    .data-strip{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;margin:10px 0 12px;position:relative;z-index:6}
+    .data-strip{display:grid;grid-template-columns:1fr;gap:10px;align-items:start;margin:10px 0 12px;position:relative;z-index:6}
     .data-strip-group{min-width:0;border:1px solid rgba(47,131,226,.40);background:linear-gradient(180deg,rgba(7,18,38,.92),rgba(3,9,20,.96));padding:8px;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));box-shadow:0 0 16px rgba(24,93,194,.10),inset 0 0 20px rgba(27,111,206,.06)}
     .data-strip-title{font:700 10px/1 monospace;letter-spacing:.12em;color:#7fa8c5;margin-bottom:7px}
     .top-faction-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -216,7 +221,6 @@
     .data-strip .weapon-icon{font-size:18px;margin-bottom:4px}
     .data-strip .weapon-name{font-size:11px}
     .data-strip .weapon-stock{font-size:9px;margin-top:4px}
-    .data-strip{grid-template-columns:1fr}
     .power-chart-group{display:grid;grid-template-rows:auto auto 1fr}
     .power-legend{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px}
     .chart-faction-btn{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:88px;padding:7px 10px}
@@ -227,38 +231,14 @@
     .boot-notice.error{border-color:rgba(255,82,105,.8);color:#ffdce2}
     .boot-notice.hidden{display:none}
 
+    /* RESPONSIVE */
     @media(max-width:1120px){.stage-169{width:min(100%,calc((100vh - var(--stage-pad))*16/9))}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}.panel-head:not(.matrix-panel-head) .panel-title::after{display:none}.panel-note{max-width:55%;line-height:1.35}}
     @media(min-width:721px){h1{white-space:nowrap}}
     @media(max-width:900px){.stage-169{width:100%;height:auto;aspect-ratio:auto}.layout{grid-template-columns:1fr;height:auto}.panel{height:auto}.generator-wrap{aspect-ratio:19/24;flex:none}.war-wrap{aspect-ratio:1/1;flex:none}#leftCanvas,#warCanvas{width:100%;height:100%;max-width:none;aspect-ratio:auto}.panel-note{max-width:62%}}
     @media(max-width:720px){body{padding:6px}.topbar{padding:8px 9px;gap:8px;align-items:flex-start}.toolbar{display:flex;max-width:100%;gap:5px}.toolbar label{font-size:10px}.record-controls{width:100%;justify-content:flex-end;flex-wrap:wrap}.record-controls select{height:28px}.record-status{min-width:64px}.top-counters{grid-template-columns:1fr}.counter-card{padding:8px 10px}.counter-chip{font-size:10px;padding:3px 6px}.toolbar .speed{width:92px}.toolbar .btn{padding:6px 8px;font-size:11px}.data-strip{grid-template-columns:1fr}.top-weapon-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.power-chart-wrap{height:150px}.panel-head:not(.matrix-panel-head) .panel-note{display:none}.canvas-wrap{min-height:0}.generator-wrap,.war-wrap{min-height:0}h1{font-size:15px}.subtitle{display:none}.stage-169{--stage-pad:250px}.layout{gap:8px}.matrix-panel-head{min-height:70px}.matrix-rule{font-size:9px;padding-inline:6px}}
     @media(max-width:480px){.matrix-heading{align-items:flex-start}.matrix-panel-head .panel-title::after{display:none}.panel-index{display:none}.matrix-rules{grid-template-columns:1fr}.matrix-panel-head{min-height:0}.generator-wrap{aspect-ratio:19/24}}
 
-    /* v122 UI 自检第 1 轮：参考图的深海军蓝底色与高纯度青色结构光。仅改视觉属性。 */
-    :root{
-      --text:#eaf8ff;
-      --muted:#7fa7bd;
-      --cyan:#18e7ff;
-      --blue:#197dff;
-      --violet:#6074ff;
-      --magenta:#ef4bc6;
-      --danger:#ff6075;
-      --panel:#020a16;
-      --line:rgba(41,210,255,.34);
-    }
-    body{
-      background:
-        radial-gradient(circle at 10% 2%,rgba(0,111,184,.19),transparent 31%),
-        radial-gradient(circle at 88% 7%,rgba(0,83,160,.14),transparent 34%),
-        radial-gradient(circle at 52% 106%,rgba(0,218,255,.07),transparent 42%),
-        linear-gradient(180deg,#020915 0%,#010611 54%,#00040b 100%);
-    }
-    body::before{
-      opacity:.31;
-      background:
-        repeating-linear-gradient(0deg,rgba(160,231,255,.014) 0,rgba(160,231,255,.014) 1px,transparent 1px,transparent 4px),
-        repeating-linear-gradient(90deg,transparent 0,transparent 79px,rgba(32,204,255,.018) 80px);
-    }
-    body::after{background:radial-gradient(ellipse at center,transparent 48%,rgba(0,3,10,.67) 100%)}
+    /* COMPONENT SURFACES */
     .topbar,.counter-card,.data-strip-group,.panel{
       border-color:rgba(30,204,255,.46);
       background:linear-gradient(180deg,rgba(5,19,36,.975),rgba(1,8,19,.99));
@@ -275,7 +255,6 @@
       box-shadow:inset 0 0 52px rgba(0,92,166,.22),0 0 14px rgba(0,181,255,.10);
     }
 
-    /* v122 UI 自检第 2 轮：强化标题、编号与规则信息层级，不改变文字尺寸和容器几何。 */
     h1{
       color:#f1fbff;
       font-weight:800;
@@ -334,7 +313,6 @@
     }
     .matrix-rule b{color:#28edff;text-shadow:0 0 7px rgba(33,231,255,.62)}
 
-    /* v122 UI 自检第 3 轮：强化卡片状态、按钮与图表仪器感。仅改表面材质。 */
     .btn{
       color:#dff8ff;
       border-color:rgba(48,156,201,.66);
@@ -394,7 +372,6 @@
       box-shadow:inset 0 0 28px rgba(0,105,173,.16),0 0 12px rgba(18,218,255,.08);
     }
 
-    /* v122 UI 自检第 5 轮：统一角标与微光语言，完成参考图风格收束。 */
     .panel::before{opacity:.96;filter:drop-shadow(0 0 8px rgba(26,225,255,.68))}
     .panel::after{border-color:rgba(43,204,239,.20)}
     .canvas-wrap::before{opacity:.18}
@@ -425,7 +402,6 @@
     }
     .power-chart-group .faction-btn:not(.active){filter:saturate(.84)}
 
-    /* v174 UI 迭代 1：把左侧矩阵从“标题 + 画布”拆成阶段导航、规则摘要、物理画布三层。 */
     .stage-169 .layout{grid-template-columns:minmax(0,47fr) minmax(0,53fr);gap:13px}
     .panel-left{--panel-accent:#1ce8ff;--panel-accent-2:#4b78ff}
     .panel-left .panel-head{background:linear-gradient(90deg,rgba(10,105,144,.20),transparent 70%)}
@@ -444,7 +420,6 @@
     .matrix-rule i{font-style:normal;color:#e3f8ff;font-size:10px;letter-spacing:.08em}
     .matrix-rule em{font-style:normal;overflow:hidden;text-overflow:ellipsis;color:#7599af;font:8px/1.1 monospace;letter-spacing:0}
 
-    /* v175 UI 迭代 2：让左侧画布成为独立的物理仪表盘，降低装饰噪声并提高分区识别度。 */
     .panel-left .generator-wrap{
       border-color:rgba(47,202,237,.62);
       background:linear-gradient(180deg,rgba(1,11,22,.98),rgba(1,7,15,.99));
@@ -454,7 +429,6 @@
     .panel-left .generator-wrap::after{opacity:.72;filter:drop-shadow(0 0 5px rgba(34,227,255,.62))}
     .panel-left .canvas-wrap{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
 
-    /* v176 UI 迭代 3：强化流程节奏和“生成 → 分流 → 兑现”方向感。 */
     .panel-left .panel-title::after{color:#6defff;opacity:.72}
     .panel-left .matrix-rule:nth-child(1){border-color:rgba(28,232,255,.56)}
     .panel-left .matrix-rule:nth-child(2){border-color:rgba(83,152,255,.48)}
@@ -469,7 +443,6 @@
     .panel-left .generator-wrap::after{z-index:4}
     .panel-left #leftCanvas{background:radial-gradient(circle at 50% 44%,rgba(11,48,78,.32),rgba(1,7,15,.96) 74%)}
 
-    /* v177 UI 迭代 4：窄屏时信息自动折叠，避免阶段标签互相挤压；动画只留给交互状态。 */
     .panel-left .matrix-rule{transition:border-color .2s ease,background .2s ease,box-shadow .2s ease}
     .panel-left .matrix-rule:hover{border-color:#5cecff;background:linear-gradient(145deg,rgba(12,79,104,.64),rgba(2,18,31,.94));box-shadow:inset 0 1px rgba(166,248,255,.12),0 0 12px rgba(29,214,255,.13)}
     .panel-left .matrix-rule:focus-visible{outline:2px solid #b8f7ff;outline-offset:2px}
@@ -485,10 +458,8 @@
     }
     @media(max-width:480px){.matrix-rules{grid-template-columns:1fr 1fr}.matrix-rule{min-height:32px}}
 
-    /* v180 UI 清理：移除顶部阶段导航，标题区只保留矩阵名称与编号。 */
     .matrix-panel-head{display:flex;align-items:center;min-height:48px;padding:3px 7px 8px}
 
-    /* v182 UI 减法重构：保留工业仪表气质，降低重复边框、角标和荧光噪声。 */
     .panel-left{
       padding:7px;
       border-color:rgba(52,142,190,.34);
@@ -620,6 +591,9 @@
 
 <script>
 (() => {
+  'use strict';
+
+  // 1. Constants / Config
   const BUILD_INFO=Object.freeze({version:'216-webgpu',name:'Pixel Territory War'});
   document.title=`${BUILD_INFO.name} v${BUILD_INFO.version}`;
   const buildVersionEl=document.getElementById('buildVersion');if(buildVersionEl)buildVersionEl.textContent=`v${BUILD_INFO.version}`;
@@ -632,7 +606,7 @@
   const WEAPONS={scatter:{name:'霰弹',icon:'✦'},machine:{name:'机枪',icon:'▥'},shield:{name:'护盾',icon:'⬡'},orb:{name:'大球',icon:'●'},sniper:{name:'狙击',icon:'⌖'}};
   const WEAPON_COLORS={scatter:'#f34cff',machine:'#22dfff',shield:'#40e7ff',orb:'#b05cff',sniper:'#7e8cff'};
   const CONVERTER_SHORT_LABELS={scatter:'霰',machine:'机',shield:'盾',orb:'球',sniper:'狙'};
-  // v100：在当前布局基础上，将 X8 加宽到 130%，X2 缩窄到 90%，X4 与 gap 保持原基准，
+  // 在当前布局基础上，将 X8 加宽到 130%，X2 缩窄到 90%，X4 与 gap 保持原基准，
   // 然后对全部分区做一次归一化，确保总宽度仍严格等于 100%。
   const MULT_CELL_BASE_LAYOUT=[
     {type:'x8',fraction:363/8000},
@@ -650,8 +624,7 @@
     fraction:item.fraction*(MULT_WIDTH_MULTIPLIERS[item.type]||1)/MULT_LAYOUT_WEIGHT_SUM
   }));
   const STOCK_KEYS=Object.keys(WEAPONS);
-  const leftCanvas=document.getElementById('leftCanvas'), warCanvas=document.getElementById('warCanvas'), powerChartCanvas=document.getElementById('powerChartCanvas');
-  // v65：重构火力生成矩阵的逻辑版心，使其更适配当前左侧窄高区域。
+  // 重构火力生成矩阵的逻辑版心，使其更适配当前左侧窄高区域。
   const LV={w:760,h:960}, WV={w:1000,h:1000};
   // v216-webgpu：触控屏 Windows 仍应使用桌面 120Hz 档。只有移动 UA，或
   // 粗指针且短边不超过 1024px 的设备才进入移动安全档；?desktop=1 可用于明确 A/B。
@@ -724,7 +697,7 @@
     maxVisualPellets:5
   };
 
-  // v96：高频调参集中在此处。字段名描述其玩法/物理意义，便于后续平衡而无需全文件搜常数。
+  // 高频调参集中在此处。字段名描述其玩法/物理意义，便于后续平衡而无需全文件搜常数。
   const TUNING=Object.freeze({
     machine:Object.freeze({
       fireStepDeg:.05,             // 炮管每旋转多少度结算一次机枪发射
@@ -790,7 +763,7 @@
       inset:3
     }),
     orbBulletMomentum:Object.freeze({
-      inheritanceScale:.20,        // 子弹→大球的基础速度继承缩为 v97 当前公式的 20%
+      inheritanceScale:.20,        // 子弹→大球的基础速度继承采用当前公式的 20%
       maxBaseGain:24,              // 缩放前的最大速度增量
       minBaseGain:1.5,             // 缩放前的最小速度增量
       referenceRadius:18,          // 参考半径；达到该尺寸后开始明显降低动能继承
@@ -810,42 +783,87 @@
   const COLLISION_SPEED_RESPONSE_EXPONENT=TUNING.collision.speedResponseExponent;
   const COLLISION_SPEED_RESPONSE_FLOOR=TUNING.collision.speedResponseFloor;
 
+  const CONFIG=Object.freeze({
+    time:Object.freeze({
+      simStep:1/PERF_PROFILE.simulationHz,
+      warSimStep:1/PERF_PROFILE.warSimulationHz,
+      territoryStep:1/PERF_PROFILE.territoryHz,
+      territoryUploadStep:1/PERF_PROFILE.territoryUploadHz,
+      trailStep:1/PERF_PROFILE.trailHz,
+      effectStep:1/PERF_PROFILE.effectHz,
+      hudStep:1/PERF_PROFILE.hudTextHz,
+      maxFrameDelta:.1
+    }),
+    matrix:Object.freeze({gravity:1000,maxBallLifetime:18,logicalSize:LV}),
+    territory:Object.freeze({gridWidth:1000,gridHeight:1000,captureFirepowerInterval:180}),
+    battle:Object.freeze({logicalSize:WV,monochromeWinSeconds:10}),
+    faction:Object.freeze({
+      count:FACTIONS.length,
+      initialShield:10000000,
+      initialCannonAngles:Object.freeze([45,135,315,225].map(value=>value*Math.PI/180))
+    }),
+    weapon:Object.freeze({
+      machine:Object.freeze({initialFirepower:400000})
+    }),
+    render:Object.freeze({maxCanvasDpr:PERF_PROFILE.maxCanvasDpr,trailScale:PERF_PROFILE.trailScale}),
+    performance:Object.freeze({profile:PERF_PROFILE,debug:PERF_DEBUG_ACTIVE}),
+    recording:Object.freeze({
+      presets:Object.freeze({
+        '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:50000000,avcCodec:'avc1.64002a',label:'1080P60 HQ'}),
+        '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:120000000,avcCodec:'avc1.640033',label:'4K30 HQ'})
+      })
+    })
+  });
+
+  // 2. Utilities
+
   function get2DContext(canvas,options){return canvas.getContext('2d',options)||canvas.getContext('2d');}
+
+  // 3. DOM Bindings
+  function createDOMBindings(){
+    const byId=id=>document.getElementById(id);
+    return Object.freeze({
+      canvas:Object.freeze({left:byId('leftCanvas'),war:byId('warCanvas'),powerChart:byId('powerChartCanvas')}),
+      layout:document.querySelector('.layout'),
+      ui:Object.freeze({
+        bootNotice:byId('bootNotice'),
+        feed:byId('feed'),
+        stats:byId('stats'),
+        roundText:byId('roundText'),
+        perfText:byId('perfText'),
+        mechanicsText:byId('mechanicsText'),
+        profileBadge:byId('profileBadge'),
+        overloadBadge:byId('overloadBadge'),
+        pauseBtn:byId('pauseBtn'),
+        resetBtn:byId('resetBtn'),
+        launchBtn:byId('launchBtn'),
+        speedRange:byId('speedRange'),
+        speedText:byId('speedText'),
+        videoResolution:byId('videoResolution'),
+        recordGameBtn:byId('recordGameBtn'),
+        stopRecordBtn:byId('stopRecordBtn'),
+        recordStatus:byId('recordStatus'),
+        multHitText:byId('multHitText'),
+        converterHitText:byId('converterHitText'),
+        settledSizeText:byId('settledSizeText'),
+        offsetRange:byId('offsetRange'),
+        offsetText:byId('offsetText'),
+        driftRange:byId('driftRange'),
+        driftText:byId('driftText'),
+        factionButtons:Array.from(document.querySelectorAll('.faction-btn')),
+        weaponButtons:Array.from(document.querySelectorAll('.weapon-btn')),
+        stockEls:Array.from(document.querySelectorAll('[data-stock]')),
+        factionTotalEls:Array.from(document.querySelectorAll('[data-faction-total]'))
+      })
+    });
+  }
+  const DOM=createDOMBindings();
+  const leftCanvas=DOM.canvas.left,warCanvas=DOM.canvas.war,powerChartCanvas=DOM.canvas.powerChart;
+  const UI=DOM.ui;
   const lctx=get2DContext(leftCanvas,{alpha:false,desynchronized:true});
   const wctx=get2DContext(warCanvas,{alpha:false,desynchronized:true});
   const pctx=get2DContext(powerChartCanvas,{alpha:true,desynchronized:true});
   const powerChartMetrics={width:0,height:0,dpr:0,dirty:true};
-  // 高频 DOM 节点只查询一次；空节点仍安全保留为 null。
-  const UI={
-    bootNotice:document.getElementById('bootNotice'),
-    feed:document.getElementById('feed'),
-    stats:document.getElementById('stats'),
-    roundText:document.getElementById('roundText'),
-    perfText:document.getElementById('perfText'),
-    mechanicsText:document.getElementById('mechanicsText'),
-    profileBadge:document.getElementById('profileBadge'),
-    overloadBadge:document.getElementById('overloadBadge'),
-    pauseBtn:document.getElementById('pauseBtn'),
-    resetBtn:document.getElementById('resetBtn'),
-    launchBtn:document.getElementById('launchBtn'),
-    speedRange:document.getElementById('speedRange'),
-    speedText:document.getElementById('speedText'),
-    videoResolution:document.getElementById('videoResolution'),
-    recordGameBtn:document.getElementById('recordGameBtn'),
-    stopRecordBtn:document.getElementById('stopRecordBtn'),
-    recordStatus:document.getElementById('recordStatus'),
-    multHitText:document.getElementById('multHitText'),
-    converterHitText:document.getElementById('converterHitText'),
-    settledSizeText:document.getElementById('settledSizeText'),
-    offsetRange:document.getElementById('offsetRange'),
-    offsetText:document.getElementById('offsetText'),
-    driftRange:document.getElementById('driftRange'),
-    driftText:document.getElementById('driftText'),
-    factionButtons:Array.from(document.querySelectorAll('.faction-btn')),
-    weaponButtons:Array.from(document.querySelectorAll('.weapon-btn')),
-    stockEls:Array.from(document.querySelectorAll('[data-stock]')),
-    factionTotalEls:Array.from(document.querySelectorAll('[data-faction-total]'))
-  };
   const bootNotice=UI.bootNotice;
   let bootFrameCompleted=false;
   window.addEventListener('error',event=>{
@@ -857,22 +875,57 @@
   const POWER_HISTORY_STEP=.25, POWER_HISTORY_MAX_POINTS=1200;
   const powerHistory=Array.from({length:4},()=>[]);
   let lastPowerHistoryTime=-1;
-  const MONOCHROME_WIN_SECONDS=10;
-  let selectedFaction=0, selectedWeapon=null, paused=false, speed=1, simulationElapsed=0, last=performance.now();
+  const MONOCHROME_WIN_SECONDS=CONFIG.battle.monochromeWinSeconds;
+  let selectedFaction=0, selectedWeapon=null, paused=false, speed=1, simulationElapsed=0;
+  let gameLoop=null,app=null,weaponSystem=null,recordingService=null,uiController=null,renderers=null,performanceMonitor=null,debugService=null;
   let gameEnded=false,winnerFaction=-1,monochromeFaction=-1,monochromeHoldSeconds=0;
   // 每淘汰一个阵营，后续新生成/重新投放的弹珠起始数值提升 8 倍。
   let globalStartValueMultiplier=1;
-  const balls=[], projectiles=[], beams=[], pulses=[], fireQueue=[], projectilePool=[];
-  const sniperAimJobs=[];
-  const stocks=Array.from({length:4},()=>({scatter:0,machine:0,shield:0,orb:0,sniper:0}));
-  const INITIAL_SHIELD_VALUE=10000000;
-  const INITIAL_MACHINE_FIREPOWER=400000;
-  const shieldValue=Array.from({length:4},()=>INITIAL_SHIELD_VALUE);
-  const shieldFlash=[0,0,0,0];
-  const shieldGainFlash=[0,0,0,0];
-  const machineGainFlash=[0,0,0,0];
-  const eliminated=[false,false,false,false];
-  const eliminationFlash=[0,0,0,0];
+
+  // 4. State
+  const INITIAL_SHIELD_VALUE=CONFIG.faction.initialShield;
+  const INITIAL_MACHINE_FIREPOWER=CONFIG.weapon.machine.initialFirepower;
+  function createFactionState(meta,index){
+    return {
+      index,
+      meta,
+      shield:{value:INITIAL_SHIELD_VALUE,flash:0,gainFlash:0},
+      machine:{firepower:INITIAL_MACHINE_FIREPOWER,gainFlash:0,shotIndex:0},
+      cannon:{angle:CONFIG.faction.initialCannonAngles[index],stepCarry:0},
+      recoil:{x:0,y:0,vx:0,vy:0},
+      stocks:{scatter:0,machine:0,shield:0,orb:0,sniper:0},
+      eliminated:false,
+      eliminationFlash:0
+    };
+  }
+  function resetFactionState(factionState){
+    factionState.shield.value=INITIAL_SHIELD_VALUE;
+    factionState.shield.flash=0;
+    factionState.shield.gainFlash=0;
+    factionState.machine.firepower=INITIAL_MACHINE_FIREPOWER;
+    factionState.machine.gainFlash=0;
+    factionState.machine.shotIndex=0;
+    factionState.cannon.angle=CONFIG.faction.initialCannonAngles[factionState.index];
+    factionState.cannon.stepCarry=0;
+    factionState.recoil.x=factionState.recoil.y=factionState.recoil.vx=factionState.recoil.vy=0;
+    for(const key of STOCK_KEYS)factionState.stocks[key]=0;
+    factionState.eliminated=false;
+    factionState.eliminationFlash=0;
+  }
+  function createGameState(){
+    const factions=FACTIONS.map(createFactionState);
+    return {
+      factions,
+      matrix:{balls:[]},
+      battle:{projectiles:[],beams:[],pulses:[],fireQueue:[],projectilePool:[],sniperAimJobs:[]},
+      diagnostics:{matrixTimeoutCount:0},
+      ui:{dirty:true,baseTextDirty:true},
+      resetFactions(){for(const factionState of factions)resetFactionState(factionState);}
+    };
+  }
+  const state=createGameState();
+  const balls=state.matrix.balls;
+  const {projectiles,beams,pulses,fireQueue,projectilePool,sniperAimJobs}=state.battle;
   // 已兑现弹珠按 0.5px 直径步长统计；区间左闭右开，50px及以上归入末档。
   const SETTLED_SIZE_BUCKET_MIN=12;
   const SETTLED_SIZE_BUCKET_STEP=.5;
@@ -887,9 +940,7 @@
     `${SETTLED_SIZE_BUCKET_MAX}px以上`
   ]);
   const settledBallSizeBucketCounts=new Uint32Array(SETTLED_SIZE_BUCKET_LABELS.length);
-  // 护盾物理中心保持固定；以下偏移只用于表现大球撞击后的短暂视觉回弹。
-  const shieldRecoilX=[0,0,0,0],shieldRecoilY=[0,0,0,0];
-  const shieldRecoilVX=[0,0,0,0],shieldRecoilVY=[0,0,0,0];
+  // 护盾回弹状态已经归入 state.factions[index].recoil。
   let previousOrbPairContacts=new Set(),currentOrbPairContacts=new Set();
 
   const TAU=Math.PI*2;
@@ -898,7 +949,7 @@
   const MACHINE_FIRE_STEP_DEG=TUNING.machine.fireStepDeg;
   const MACHINE_FIRE_PERCENT=TUNING.machine.firePercent;
   const MACHINE_COLLISION_SCALE=2;
-  // v26：保持 v25 的 150% 机枪接触判定范围。
+  // 机枪接触判定范围保持为弹体基准的 150%。
   const MACHINE_CONTACT_SCALE=1.5;
   const MACHINE_BASE_SPEED=TUNING.machine.baseSpeed;
   const MACHINE_SPEED_NOISE=TUNING.machine.speedNoise;
@@ -907,22 +958,22 @@
   const MACHINE_CONTINUOUS_SPEED_JITTER=TUNING.machine.continuousSpeedJitter;
   const MACHINE_JITTER_RATE_A=TUNING.machine.jitterRateA;
   const MACHINE_JITTER_RATE_B=TUNING.machine.jitterRateB;
-  // v38：机枪每次触发消耗比例在 v37 基础上再次减半；同时降低弹体、核心、尾迹与碰撞火花亮度。
+  // 机枪采用当前触发消耗比例，并降低弹体、核心、尾迹与碰撞火花亮度。
   const MAX_EFFECT_PARTICLES=520;
   // 数值枚举和位标记替代每帧 Set<string> 查询。
   const FX_TYPE=Object.freeze({GENERIC:0,SHIELD_SPARK:1,ANNIHILATION_SPARK:2,SHIELD_HIT:3,ANNIHILATION:4,IMPACT:5,BASE_HIT:6,PROJECTILE_HIT:7});
   const FX_FLAG_SPARK=1,FX_FLAG_EXPANDING=2;
   const FX_TYPE_BY_NAME=Object.freeze({shieldSpark:FX_TYPE.SHIELD_SPARK,annihilationSpark:FX_TYPE.ANNIHILATION_SPARK,shieldHit:FX_TYPE.SHIELD_HIT,annihilation:FX_TYPE.ANNIHILATION,impact:FX_TYPE.IMPACT,baseHit:FX_TYPE.BASE_HIT,projectileHit:FX_TYPE.PROJECTILE_HIT});
-  const MAX_CANVAS_DPR=PERF_PROFILE.maxCanvasDpr;
-  const TRAIL_SCALE=PERF_PROFILE.trailScale;
-  const SIM_STEP=1/PERF_PROFILE.simulationHz;
-  const WAR_SIM_STEP=1/PERF_PROFILE.warSimulationHz;
-  const TERRITORY_STEP=1/PERF_PROFILE.territoryHz;
-  const TERRITORY_UPLOAD_STEP=1/PERF_PROFILE.territoryUploadHz;
-  const TERRITORY_CAPTURE_FIREPOWER_INTERVAL=180;
-  const TRAIL_UPDATE_STEP=1/PERF_PROFILE.trailHz;
-  const EFFECT_UPDATE_STEP=1/PERF_PROFILE.effectHz;
-  const HUD_TEXT_STEP=1/PERF_PROFILE.hudTextHz;
+  const MAX_CANVAS_DPR=CONFIG.render.maxCanvasDpr;
+  const TRAIL_SCALE=CONFIG.render.trailScale;
+  const SIM_STEP=CONFIG.time.simStep;
+  const WAR_SIM_STEP=CONFIG.time.warSimStep;
+  const TERRITORY_STEP=CONFIG.time.territoryStep;
+  const TERRITORY_UPLOAD_STEP=CONFIG.time.territoryUploadStep;
+  const TERRITORY_CAPTURE_FIREPOWER_INTERVAL=CONFIG.territory.captureFirepowerInterval;
+  const TRAIL_UPDATE_STEP=CONFIG.time.trailStep;
+  const EFFECT_UPDATE_STEP=CONFIG.time.effectStep;
+  const HUD_TEXT_STEP=CONFIG.time.hudStep;
   const CANNON_BARREL_LENGTH=34;
   const BASE_RING_RADIUS=20;
   const BASE_BODY_RADIUS=56;
@@ -950,26 +1001,30 @@
   const SNIPER_TRAIL_LIFETIME=10;
   const SNIPER_TRAIL_FADE_LAYERS=8;
   const BALL_TRAIL_CAPACITY=14;
-  const INITIAL_CANNON_ANGLES=[45,135,315,225].map(v=>v*Math.PI/180);
-  const cannonAngle=INITIAL_CANNON_ANGLES.slice();
-  const cannonStepCarry=[0,0,0,0];
   const hudStars=Array.from({length:110},(_,i)=>({x:(i*137.53)%WV.w,y:(i*79.71)%WV.h,r:.45+(i%5)*.18,phase:(i*1.91)%TAU}));
-  const machineFirepowerPool=new Float64Array(4);
-  const machineShotIndex=new Uint32Array(4);
   const machineVisualGroups=Array.from({length:4},()=>({rounds:0,damage:0,sin:0,cos:0,speed:0,count:0,seed:0}));
 
-  // 真实 1000 × 1000 格：每个逻辑方格对应战场中的一个像素单元。
-  const GRID_W=1000, GRID_H=1000;
+  // TerritorySystem owns the million-cell hot TypedArrays; aliases below keep hot loops allocation-free.
+  const GRID_W=CONFIG.territory.gridWidth,GRID_H=CONFIG.territory.gridHeight;
   const WAR_TO_GRID_X=GRID_W/WV.w,WAR_TO_GRID_Y=GRID_H/WV.h;
-  const owner=new Uint8Array(GRID_W*GRID_H);
-  const territoryCapturedTick=new Uint32Array(GRID_W*GRID_H);
-  const territoryColorTracked=new Uint8Array(GRID_W*GRID_H);
-  const activeTerritoryColorCells=[];
-  const territoryRefreshStamp=new Uint32Array(GRID_W*GRID_H);
+  const territoryData={
+    owner:new Uint8Array(GRID_W*GRID_H),
+    capturedTick:new Uint32Array(GRID_W*GRID_H),
+    colorTracked:new Uint8Array(GRID_W*GRID_H),
+    activeColorCells:[],
+    refreshStamp:new Uint32Array(GRID_W*GRID_H),
+    pathStamp:new Uint32Array(GRID_W*GRID_H),
+    counts:new Uint32Array(CONFIG.faction.count)
+  };
+  const owner=territoryData.owner;
+  const territoryCapturedTick=territoryData.capturedTick;
+  const territoryColorTracked=territoryData.colorTracked;
+  const activeTerritoryColorCells=territoryData.activeColorCells;
+  const territoryRefreshStamp=territoryData.refreshStamp;
   // 同一条弹道会在多个采样点覆盖相同网格；用路径戳避免重复查询和重复占领预算计算。
-  const territoryPathStamp=new Uint32Array(GRID_W*GRID_H);
+  const territoryPathStamp=territoryData.pathStamp;
   let territoryPathStampId=1;
-  const territoryCounts=new Uint32Array(4);
+  const territoryCounts=territoryData.counts;
   let territoryRefreshStepId=0;
 
   // 离屏领土画布：占领发生时只更新对应像素，不在每一帧遍历 100 万格。
@@ -2539,14 +2594,15 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
          for(let i=0;i<GPU_BATTLE_BASE_LABEL_MAX_CHARS;i++)buffer[glyphOffset+i]=Math.max(0,GPU_ORB_FONT_GLYPHS.indexOf(chars[i]||' '));
        };
        for(let f=0;f<4;f++){
+         const factionState=state.factions[f];
          const base=f*(GPU_BATTLE_BASE_UI_STRIDE_BYTES/4);
-         buffer[base+0]=finiteGpuScalar(shieldValue[f]);buffer[base+1]=finiteGpuScalar(machineFirepowerPool[f]);buffer[base+2]=finiteGpuScalar(hudPercentages[f]);buffer[base+3]=finiteGpuScalar(shieldGainFlash[f]);
-         buffer[base+4]=finiteGpuScalar(machineGainFlash[f]);buffer[base+5]=finiteGpuScalar(eliminationFlash[f]);buffer[base+6]=finiteGpuScalar(shieldFlash[f]);buffer[base+7]=finiteGpuScalar(shieldRecoilX[f]);
-         buffer[base+8]=finiteGpuScalar(shieldRecoilY[f]);buffer[base+9]=eliminated[f]?1:0;buffer[base+13]=0;
-        if(eliminated[f]){
+         buffer[base+0]=finiteGpuScalar(factionState.shield.value);buffer[base+1]=finiteGpuScalar(factionState.machine.firepower);buffer[base+2]=finiteGpuScalar(hudPercentages[f]);buffer[base+3]=finiteGpuScalar(factionState.shield.gainFlash);
+         buffer[base+4]=finiteGpuScalar(factionState.machine.gainFlash);buffer[base+5]=finiteGpuScalar(factionState.eliminationFlash);buffer[base+6]=finiteGpuScalar(factionState.shield.flash);buffer[base+7]=finiteGpuScalar(factionState.recoil.x);
+         buffer[base+8]=finiteGpuScalar(factionState.recoil.y);buffer[base+9]=factionState.eliminated?1:0;buffer[base+13]=0;
+        if(factionState.eliminated){
           writeLine(base,0,'ELIMINATED');writeLine(base,1,'CORE DESTROYED');
         }else{
-          writeLine(base,0,formatNum(shieldValue[f]));writeLine(base,1,formatMachineFirepower(machineFirepowerPool[f]));
+          writeLine(base,0,formatNum(factionState.shield.value));writeLine(base,1,formatMachineFirepower(factionState.machine.firepower));
         }
         writeLine(base,2,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`);
       }
@@ -2571,7 +2627,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     writeGlobals(dt,paintNow,captureCost,spawnCount,consumeShieldAdds=true){
        const b=new ArrayBuffer(64),v=new DataView(b);this.writeBaseUi();v.setFloat32(0,dt,true);v.setFloat32(4,simulationElapsed,true);v.setUint32(8,(Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ))&GPU_BATTLE_TICK_MASK)>>>0,true);v.setUint32(12,spawnCount>>>0,true);
       v.setFloat32(16,finiteGpuScalar(captureCost),true);v.setFloat32(20,WV.w,true);v.setFloat32(24,WV.h,true);v.setUint32(28,paintNow?1:0,true);
-      for(let f=0;f<4;f++)v.setFloat32(32+f*4,cannonAngle[f],true);for(let f=0;f<4;f++)v.setFloat32(48+f*4,consumeShieldAdds?finiteGpuScalar(this.pendingShieldAdds[f]):0,true);
+      for(let f=0;f<4;f++)v.setFloat32(32+f*4,state.factions[f].cannon.angle,true);for(let f=0;f<4;f++)v.setFloat32(48+f*4,consumeShieldAdds?finiteGpuScalar(this.pendingShieldAdds[f]):0,true);
       if(consumeShieldAdds)this.pendingShieldAdds.fill(0);this.device.queue.writeBuffer(this.globalsBuffer,0,b);
     }
 
@@ -2662,11 +2718,11 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
         const encoder=this.device.createCommandEncoder({label:'gpu-battle-readback-copy'});encoder.copyBufferToBuffer(this.battleBuffer,0,this.readbackBuffer,0,this.battleReadbackBytes);this.device.queue.submit([encoder.finish()]);
         this.readbackBuffer.mapAsync(GPUMapMode.READ).then(()=>{
           const copy=this.readbackBuffer.getMappedRange().slice(0);this.readbackBuffer.unmap();this.readbackPending=false;if(generation!==this.generation||!this.ready)return;
-          const u=new Uint32Array(copy,0,this.battleU32Length),f=new Float32Array(copy,0,this.battleU32Length);for(let i=0;i<4;i++){territoryCounts[i]=u[i];shieldValue[i]=Math.max(0,f[4+i]);}
+          const u=new Uint32Array(copy,0,this.battleU32Length),f=new Float32Array(copy,0,this.battleU32Length);for(let i=0;i<4;i++){territoryCounts[i]=u[i];state.factions[i].shield.value=Math.max(0,f[4+i]);}
           const control=index=>u[GPU_BATTLE_STATE_PREFIX_U32+index]||0;this.activeCount=control(GPU_BATTLE_CONTROL.activeCount);this.estimatedFreeSlots=control(GPU_BATTLE_CONTROL.freeSlots);this.drawOrbCount=control(GPU_BATTLE_CONTROL.orbCount);this.drawProjectileCount=control(GPU_BATTLE_CONTROL.activeListCount);this.drawEffectCount=control(GPU_BATTLE_CONTROL.activeOrbEffectCount);document.documentElement.dataset.gpuBattleDraw=`${this.drawProjectileCount},${this.drawOrbCount},${this.drawEffectCount}`;gpuActiveProjectileEstimate=this.activeCount;if(this.activeCount>perfCounters.projectilePeakCount)perfCounters.projectilePeakCount=this.activeCount;
           if(PERF_DEBUG_ACTIVE){const activeInput=control(GPU_BATTLE_CONTROL.activeListInput),activeOutput=control(GPU_BATTLE_CONTROL.activeListOutput),smallQueries=control(GPU_BATTLE_CONTROL.smallOrbQueries),smallCandidates=control(GPU_BATTLE_CONTROL.smallOrbCandidates),freeSlots=control(GPU_BATTLE_CONTROL.freeSlots);this.stats={activeProjectileCount:this.activeCount,projectilePeakCount:perfCounters.projectilePeakCount,freeProjectileSlots:freeSlots,projectilePoolBalance:this.activeCount+freeSlots,projectilePoolBalanceValid:this.activeCount+freeSlots===GPU_BATTLE_MAX_PROJECTILES,activeListInputCount:activeInput,activeListOutputCount:activeOutput,deadProjectileCount:control(GPU_BATTLE_CONTROL.deadProjectiles),activeCompactionRatio:activeInput?activeOutput/activeInput:1,orbCount:this.drawOrbCount,orbHashOccupiedCells:control(GPU_BATTLE_CONTROL.orbHashOccupiedCells),orbHashMaxCellLoad:control(GPU_BATTLE_CONTROL.orbHashMaxCellLoad),orbHashOverflowCount:control(GPU_BATTLE_CONTROL.orbHashOverflowCount),orbOverflowFallbackCount:control(GPU_BATTLE_CONTROL.orbOverflowCount),orbCollisionCandidateCount:control(GPU_BATTLE_CONTROL.orbCollisionCandidates),orbCollisionNarrowphaseCount:control(GPU_BATTLE_CONTROL.orbCollisionNarrowphase),orbCollisionHitCount:control(GPU_BATTLE_CONTROL.orbCollisionHits),smallProjectileOrbQueryCount:smallQueries,smallProjectileOrbCandidateCount:smallCandidates,averageOrbCandidatesPerSmallProjectile:smallQueries?smallCandidates/smallQueries:0,spawnQueueLength:this.pendingSpawns.length,spawnQueuePeak:perfCounters.spawnQueuePeak,spawnQueueRejected:perfCounters.spawnQueueRejected,gpuSpawnRejectedEliminated:control(GPU_BATTLE_CONTROL.gpuSpawnRejectedEliminated),gpuSpawnRejectedNoSlot:control(GPU_BATTLE_CONTROL.gpuSpawnRejectedNoSlot),territoryDirtyTileCount:control(GPU_BATTLE_CONTROL.territoryDirtyTileCount),dirtyTileListPending:control(GPU_BATTLE_CONTROL.dirtyTileCount),dirtyTileOverflow:control(GPU_BATTLE_CONTROL.dirtyTileOverflow),territoryUniformTileSkipCount:control(GPU_BATTLE_CONTROL.territoryUniformTileSkips),territoryTileRefreshCount:control(GPU_BATTLE_CONTROL.territoryTileRefreshCount),largeOrbPaintPixelTests:control(GPU_BATTLE_CONTROL.largeOrbPaintPixelTests),largeOrbPaintCASAttempts:control(GPU_BATTLE_CONTROL.largeOrbPaintCASAttempts),largeOrbPaintCASFailures:control(GPU_BATTLE_CONTROL.largeOrbPaintCASFailures),releaseOverflow:control(GPU_BATTLE_CONTROL.releaseOverflow)};document.documentElement.dataset.gpuBattleStats=JSON.stringify(this.info());}
           for(let faction=0;faction<4;faction++){
-            if(u[8+faction]&&!eliminated[faction]){
+            if(u[8+faction]&&!state.factions[faction].eliminated){
               const attackerRaw=u[12+faction],attacker=attackerRaw?Math.min(3,attackerRaw-1):null,base=getBasePos(faction);eliminateFaction(faction,attacker,base.x,base.y);
             }
           }
@@ -2687,7 +2743,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
          tileSummary[ty*GPU_BATTLE_TERRITORY_TILE_COLS+tx]=uniform?(GPU_BATTLE_TERRITORY_TILE_UNIFORM|first)>>>0:0;
        }
        this.device.queue.writeBuffer(this.worldBuffer,GPU_BATTLE_WORLD_TILES_OFFSET_BYTES,tileSummary);
-      const state=new Uint32Array(this.battleU32Length);for(let f=0;f<4;f++){state[f]=territoryCounts[f];state[4+f]=floatToBits(finiteGpuScalar(shieldValue[f]));state[8+f]=eliminated[f]?1:0;state[12+f]=0;}state[GPU_BATTLE_STATE_PREFIX_U32+GPU_BATTLE_CONTROL.freeSlots]=GPU_BATTLE_MAX_PROJECTILES;this.device.queue.writeBuffer(this.battleBuffer,0,state);this.device.queue.writeBuffer(this.orbEffectBuffer,0,new Float32Array(GPU_BATTLE_MAX_ORB_EFFECTS*GPU_BATTLE_ORB_EFFECT_VEC4S*4).fill(-100));
+      const battleState=new Uint32Array(this.battleU32Length);for(let f=0;f<4;f++){const factionState=state.factions[f];battleState[f]=territoryCounts[f];battleState[4+f]=floatToBits(finiteGpuScalar(factionState.shield.value));battleState[8+f]=factionState.eliminated?1:0;battleState[12+f]=0;}battleState[GPU_BATTLE_STATE_PREFIX_U32+GPU_BATTLE_CONTROL.freeSlots]=GPU_BATTLE_MAX_PROJECTILES;this.device.queue.writeBuffer(this.battleBuffer,0,battleState);this.device.queue.writeBuffer(this.orbEffectBuffer,0,new Float32Array(GPU_BATTLE_MAX_ORB_EFFECTS*GPU_BATTLE_ORB_EFFECT_VEC4S*4).fill(-100));
        const free=new Uint32Array(GPU_BATTLE_MAX_PROJECTILES);for(let i=0;i<free.length;i++)free[i]=GPU_BATTLE_MAX_PROJECTILES-1-i;this.device.queue.writeBuffer(this.spatialBuffer,this.spatialFreeOffset*4,free);
     }
     async waitIdle(){if(this.ready)await this.device.queue.onSubmittedWorkDone();}
@@ -2800,7 +2856,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   const upperPegs=[], lowerPegs=[], upperRotors=[], lowerRotors=[], multCells=[], multBoundaries=[], converterCells=[];
   let gapFieldCell=null;
-  // v65：在不改变大体形式的前提下，按当前显示区域重构矩阵内部纵向分配。
+  // 在不改变大体形式的前提下，按当前显示区域重构矩阵内部纵向分配。
   const BOARD={spawnY:68,upperTop:108,upperBottom:358,multTop:388,multBottom:468,lowerTop:500,lowerBottom:758,convertTop:798,convertBottom:934};
   const PLAYFIELD={left:24,right:LV.w-24};
   PLAYFIELD.width=PLAYFIELD.right-PLAYFIELD.left;
@@ -2823,7 +2879,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   const CONVERTER_MIN_WIDTH=.01;
   const CONVERTER_HIGHLIGHT_FADE=1.15;
 
-  // v93：弹珠数值从 2¹ 到 2²⁰ 时，半径从 6 线性增加到 25；之后封顶。
+  // 弹珠数值从 2¹ 到 2²⁰ 时，半径从 6 线性增加到 25；之后封顶。
   const BALL_RADIUS_BASE=6;
   const BALL_RADIUS_PER_DOUBLING=1;
   const BALL_RADIUS_MAX=25;
@@ -2836,7 +2892,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   const GAP_FIELD_MAX_DIAMETER=BALL_RADIUS_MAX*2;
 
   // 力场入口防堆积。
-  const MATRIX_GRAVITY=1000;
+  const MATRIX_GRAVITY=CONFIG.matrix.gravity;
+  const MATRIX_BALL_MAX_LIFETIME=CONFIG.matrix.maxBallLifetime;
   const GAP_FIELD_GRAVITY_REFERENCE=MATRIX_GRAVITY;
   const GAP_FIELD_ENTRY_BAND_ABOVE=72;
   const GAP_FIELD_ENTRY_BAND_BELOW=52;
@@ -2844,19 +2901,21 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   const GAP_FIELD_WALL_CLEARANCE=1;
   const GAP_FIELD_CENTERING_ACCEL=720;
   const GAP_FIELD_CONGESTION_ACCEL=80;
+  const GAP_FIELD_TOP_STRENGTH=.72;
+  const GAP_FIELD_BOTTOM_STRENGTH=.30;
 
   // 乘区立柱统一使用胶囊接触体，所有接触面采用 95% 法向恢复系数。
   const MULT_WALL_CAP_HEIGHT=12;
   const MULT_WALL_RESTITUTION=.95;
   const MULT_WALL_TOP_DEFLECT_NORMAL_X=.24;
   const PEG_DISC_POINT_RADIUS=4.1;
-  // v121：四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值；当前转速为原设定的 80%。
+  // 四个转盘共享统一轨道半径和角速度，碰撞点半径保持原值；当前转速为原设定的 80%。
   const PEG_DISC_ORBIT_RADIUS=123.552;
-  // v191：转盘角速度提升至 v190 的 130%，帧率与矩阵整体时间倍率保持不变。
+  // 转盘角速度使用统一基准的 130%，帧率与矩阵整体时间倍率保持不变。
   const PEG_DISC_SPIN_SPEED=3.276;
-  // v186：在 v147 的 80% 基础上再降至当前的 80%，即原始矩阵速度的 64%。
+  // 矩阵当前使用原始速度的 64%。
   const MATRIX_SIMULATION_SPEED_SCALE=.64;
-  // v202：两侧墙壁仅保留被动边界碰撞，不再对贴墙弹珠额外施加向内冲量。
+  // 两侧墙壁仅保留被动边界碰撞，不再对贴墙弹珠额外施加向内冲量。
   const MATRIX_SIDE_WALL_MAX_SPEED=980;
 
   function updateRotorPegPositions(rotor,dt=0){
@@ -2933,12 +2992,19 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       const w=i===MULT_CELL_LAYOUT.length-1?PLAYFIELD.right-multX:PLAYFIELD.width*layout.fraction;
       const halfIndex=Math.floor(MULT_CELL_LAYOUT.length*.5);
       const hitLabel=type==='gap'?'GAP':(i<halfIndex?`左${type}`:`右${type}`);
-      // v181：乘区内容、隔板底脚、单向挡板和碰撞结算共用同一条底边，消除原先 3px 的错位。
-      multCells.push({x:multX,w,type,fraction:layout.fraction,mult:type==='gap'?null:Number(type.slice(1)),left:multX+MULT_SEPARATOR_HALF_WIDTH,right:multX+w-MULT_SEPARATOR_HALF_WIDTH,bottom:BOARD.multBottom,index:i,hitCount:0,hitLabel});
+      // 乘区内容、隔板底脚、单向挡板和碰撞结算共用同一条底边，消除原先 3px 的错位。
+      multCells.push({x:multX,w,type,fraction:layout.fraction,mult:type==='gap'?null:Number(type.slice(1)),left:multX,right:multX+w,leftBarrier:false,rightBarrier:false,bottom:BOARD.multBottom,index:i,hitCount:0,hitLabel});
       multX+=w;
     }
     gapFieldCell=multCells.find(cell=>cell.type==='gap')||null;
-    // 分隔线只保存中心位置，渲染与碰撞共同使用全局胶囊宽度和纵向范围。
+    // 所有乘区边界保留胶囊竖挡板；中央空隙仅在底部保持开放。
+    for(let i=0;i<multCells.length;i++){
+      const cell=multCells[i];
+      cell.leftBarrier=true;
+      cell.rightBarrier=true;
+      cell.left=cell.x+MULT_SEPARATOR_HALF_WIDTH;
+      cell.right=cell.x+cell.w-MULT_SEPARATOR_HALF_WIDTH;
+    }
     for(let i=1;i<multCells.length;i++){
       multBoundaries.push({x:multCells[i].x});
     }
@@ -2993,7 +3059,6 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const scale=Math.min(width/w,height/h);
     return {sx:scale,sy:scale,ox:(width-w*scale)*.5,oy:(height-h*scale)*.5,changed};
   }
-  let leftRenderAccumulatorMs=0;
   let resizeRaf=0;
   function resizeNow(){
     const nextLeft=fitCanvasContained(leftCanvas,LV.w,LV.h),nextWar=fitCanvas(warCanvas,WV.w,WV.h);
@@ -3002,7 +3067,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     if(nextLeft.changed||nextWar.changed){
       leftStaticCacheDirty=true;
       leftSemiStaticCacheDirty=true;
-      leftRenderAccumulatorMs=0;
+      gameLoop?.invalidateLeftRender();
       powerChartMetrics.dirty=true;
       drawPowerChart();
     }
@@ -3012,8 +3077,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     if(resizeRaf)return;
     resizeRaf=requestAnimationFrame(()=>{resizeRaf=0;resizeNow();});
   }
-  const layoutNode=document.querySelector('.layout');
-  buildBoard();
+  const layoutNode=DOM.layout;
   if('ResizeObserver' in window){new ResizeObserver(resize).observe(layoutNode);}else{window.addEventListener('resize',resize,{passive:true});}
   if('ResizeObserver' in window){new ResizeObserver(()=>{powerChartMetrics.dirty=true;drawPowerChart();}).observe(powerChartCanvas);}
   window.addEventListener('orientationchange',()=>setTimeout(resize,120),{passive:true});
@@ -3026,7 +3090,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const g=c.createRadialGradient(LV.w*.5,LV.h*.32,20,LV.w*.5,LV.h*.45,LV.h*.78);
     g.addColorStop(0,'#071a2e');g.addColorStop(.5,'#03101f');g.addColorStop(1,'#01060d');
     c.fillStyle=g;c.fillRect(0,0,LV.w,LV.h);
-    // v182：只保留最关键的倍率区与兑现区分层，避免五段色带争夺注意力。
+    // 只保留最关键的倍率区与兑现区分层，避免五段色带争夺注意力。
     const zoneBands=[
       [BOARD.multTop,BOARD.multBottom,'rgba(46,130,166,.060)'],
       [BOARD.convertTop,BOARD.convertBottom,'rgba(190,205,214,.026)']
@@ -3115,7 +3179,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     return '#'+[r,g,bl].map(v=>v.toString(16).padStart(2,'0')).join('');
   }
 
-  // v106：四方统一使用 v27 的原始阵营主色，不再对蓝方做单独混色或亮度补偿。
+  // 四方统一使用阵营主色，不再对蓝方做单独混色或亮度补偿。
   function getBaseShieldVisualStyle(factionIndex){
     return {color:FACTIONS[factionIndex].color,brightness:1};
   }
@@ -3124,7 +3188,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const canvas=document.createElement('canvas');canvas.width=176;canvas.height=176;
     const c=canvas.getContext('2d'),x=88,y=88,hudR=BASE_OUTER_RADIUS;
 
-    // v132：移除基地黑色圆形底盘，只保留阵营色分段霓虹环、副环和径向刻度。
+    // 移除基地黑色圆形底盘，只保留阵营色分段霓虹环、副环和径向刻度。
     c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=14;c.lineWidth=3;
     const start=-Math.PI*.88,end=Math.PI*.88,segments=14;
     for(let i=0;i<segments;i++){
@@ -3144,7 +3208,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function drawShieldWithBaseOuterStyle(c,x,y,r,color,flash,brightness=1,rotation=0){
     c.save();
 
-    // v144：护盾内部亮度按二次以上曲线从中心 20 增长到边缘 180。
+    // 护盾内部亮度按二次以上曲线从中心 20 增长到边缘 180。
     const interiorAlpha=t=>Math.min(.96,(SHIELD_INTERIOR_CENTER_ALPHA+(SHIELD_INTERIOR_EDGE_ALPHA-SHIELD_INTERIOR_CENTER_ALPHA)*Math.pow(t,2.35))*brightness+flash*.035*t);
     const fill=c.createRadialGradient(x,y,Math.max(0,r*.12),x,y,r);
     fill.addColorStop(0,colorWithAlpha(color,interiorAlpha(0)));
@@ -3199,8 +3263,6 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       baseTextCanvases.push(canvas);baseTextContexts.push(canvas.getContext('2d',{alpha:true,desynchronized:true}));
     }
   }
-  buildRenderCaches();
-
   function seedBaseTerritories(){
     const radiusSq=BASE_TERRITORY_RADIUS*BASE_TERRITORY_RADIUS;
     for(let faction=0;faction<FACTIONS.length;faction++){
@@ -3268,7 +3330,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     }
   }
 
-  function log(text,faction=null){const feed=UI.feed;if(!feed)return;const div=document.createElement('div');div.innerHTML=faction!==null?`<span style="color:${FACTIONS[faction].color}">●</span> ${text}`:text;feed.prepend(div);while(feed.children.length>TUNING.ui.maxLogEntries)feed.removeChild(feed.lastChild);}
+  function appendDebugLog(text,faction=null){const feed=UI.feed;if(!feed)return;const div=document.createElement('div');div.innerHTML=faction!==null?`<span style="color:${FACTIONS[faction].color}">●</span> ${text}`:text;feed.prepend(div);while(feed.children.length>TUNING.ui.maxLogEntries)feed.removeChild(feed.lastChild);}
+  function log(text,faction=null){(debugService?.log||appendDebugLog)(text,faction);}
   function formatNum(n){
     if(!Number.isFinite(n))return '∞';
     const abs=Math.abs(n);
@@ -3299,7 +3362,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function radiusFromValue(value){
     const safeValue=Number.isFinite(value)?Math.max(BASE_BALL_VALUE,value):Number.MAX_VALUE;
     const decayIntervals=Math.max(0,simulationElapsed/45);
-    // v198：每 45 秒衰减 0.5px 半径（即直径减少 1px）。
+    // 每 45 秒衰减 0.5px 半径（即直径减少 1px）。
     const doublingLevels=Math.max(0,Math.log2(safeValue/BASE_BALL_VALUE)-decayIntervals*.5);
     return Math.min(BALL_RADIUS_MAX,BALL_RADIUS_BASE+doublingLevels*BALL_RADIUS_PER_DOUBLING);
   }
@@ -3398,7 +3461,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function relaunchSelectedFaction(){
     if(gameEnded){log('本局已经结束，请重置战场后再重新投放弹珠。');return;}
-    if(eliminated[selectedFaction]){log(`${FACTIONS[selectedFaction].name}已被淘汰，无法重新投放弹珠`,selectedFaction);return;}
+    if(state.factions[selectedFaction].eliminated){log(`${FACTIONS[selectedFaction].name}已被淘汰，无法重新投放弹珠`,selectedFaction);return;}
     const selected=balls.filter(ball=>ball.faction===selectedFaction).sort((a,b)=>a.slot-b.slot);
     selected.forEach((ball,index)=>resetBallToTop(ball,{keepValue:false,useControls:true,delay:index*.14}));
     log(`${FACTIONS[selectedFaction].name}的 ${selected.length} 枚弹珠已重新投放`,selectedFaction);
@@ -3557,9 +3620,6 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     return x<PLAYFIELD.left?firstActive:lastActive;
   }
 
-  const GAP_LEFT=()=>{const gap=getGapFieldCell();return (gap?gap.x:PLAYFIELD.left)+3;};
-  const GAP_RIGHT=()=>{const gap=getGapFieldCell();return (gap?gap.x+gap.w:PLAYFIELD.right)-3;};
-
   function enterMultiplierRegion(ball){
     const cell=getMultCell(ball.x);
     ball.zone='multiplier';
@@ -3617,7 +3677,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       nx/=dist;ny/=dist;
     }
     // 圆顶正中原本会形成完全竖直法线，低速弹珠可能永久平衡在顶端。
-    // 对近顶点接触加入小幅确定性侧向分量，使其自然滚落；空隙边界优先导向空隙。
+    // 对近顶点接触加入小幅确定性侧向分量，使其自然滚落。
     if(t<=1e-4&&ny<0&&Math.abs(nx)<MULT_WALL_TOP_DEFLECT_NORMAL_X){
       const direction=options.topDeflectDirection<0?-1:1;
       nx=direction*MULT_WALL_TOP_DEFLECT_NORMAL_X;
@@ -3851,7 +3911,9 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
     const span=Math.max(1,BOARD.multBottom-fieldTop);
     const yT=Math.max(0,Math.min(1,(ball.y-fieldTop)/span));
-    const verticalFactor=.72+.28*Math.sin(Math.PI*yT);
+    const verticalFactor=yT<=.5
+      ?GAP_FIELD_TOP_STRENGTH+(1-GAP_FIELD_TOP_STRENGTH)*smooth01(yT*2)
+      :1+(GAP_FIELD_BOTTOM_STRENGTH-1)*smooth01((yT-.5)*2);
     const effectiveAccel=upwardAccel*verticalFactor;
     ball.vy-=effectiveAccel*dt;
     return effectiveAccel;
@@ -3949,19 +4011,25 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function settleBall(ball,cell){
-    if(eliminated[ball.faction])return;
+    if(state.factions[ball.faction].eliminated)return;
     recordSettledBallSize(ball);
     const amount=ball.value;
     cell.hitCount=(cell.hitCount||0)+1;
-    stocks[ball.faction][cell.key]+=amount;
+    state.factions[ball.faction].stocks[cell.key]+=amount;
     cell.highlightFaction=ball.faction;
     cell.highlightStrength=1;
     const amountText=cell.key==='machine'?formatMachineFirepower(amount):formatNum(amount);
     log(`${FACTIONS[ball.faction].name}的 ${formatNum(ball.value)} 弹珠落入【${WEAPONS[cell.key].name}转换格】，兑现 ${amountText} 火力；原球复原回顶`,ball.faction);
-    triggerWeapon(ball.faction,cell.key,amount);
-    updateStocks();
+    weaponSystem.trigger(ball.faction,cell.key,amount);
+    state.ui.dirty=true;
     pulses.push({type:'convert',x:cell.x+cell.w/2,y:BOARD.convertTop+31,r:0,max:70,color:FACTIONS[ball.faction].color,life:1});
     resetBallToTop(ball,{keepValue:false,delay:.14,returnKick:true});
+  }
+
+  function handleMatrixTimeout(ball){
+    state.diagnostics.matrixTimeoutCount++;
+    log(`matrix timeout #${state.diagnostics.matrixTimeoutCount}：${FACTIONS[ball.faction].name}弹珠在 ${ball.zone} 区超过 ${MATRIX_BALL_MAX_LIFETIME} 秒，保留 ${formatNum(ball.value)} 并安全回顶`,ball.faction);
+    resetBallToTop(ball,{keepValue:true,returnKick:true});
   }
 
   function resolveBallStaticContacts(ball,applyVelocity){
@@ -4019,6 +4087,11 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     // 第三阶段：倍率、空隙和火力转换状态结算；这一层不再直接改写碰撞速度。
     for(const b of balls){
       if(b.respawnDelay>0)continue;
+      // 生命周期 watchdog 优先于所有玩法结算，超时帧不会触发倍率或武器转换。
+      if(b.life>MATRIX_BALL_MAX_LIFETIME){
+        handleMatrixTimeout(b);
+        continue;
+      }
       if(b.zone==='upper'){
         if(b.y+b.r>=BOARD.multTop)enterMultiplierRegion(b);
       }else if(b.zone==='multiplier'){
@@ -4027,9 +4100,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
         if(b.y+b.r>=BOARD.convertTop)enterConverterRegion(b);
       }else if(b.zone==='convert'){
         updateConverterRegion(b);
-        continue;
       }
-      if(b.life>18){const cell=getConverterForX(b.x);settleBall(b,cell);}
     }
   }
 
@@ -4059,7 +4130,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   const BASE_POSITIONS=FACTIONS.map(faction=>Object.freeze({x:faction.base[0]*WV.w,y:faction.base[1]*WV.h}));
   function getBasePos(faction){return BASE_POSITIONS[faction];}
 
-  function getCannonMuzzle(faction,angle=cannonAngle[faction]){
+  function getCannonMuzzle(faction,angle=state.factions[faction].cannon.angle){
     const base=getBasePos(faction);
     const offset=BASE_RING_RADIUS+12;
     return {
@@ -4091,8 +4162,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     let weakTarget=-1,weakRatio=Infinity,weakTerritory=-1,weakOrder=Infinity;
     let mainTarget=-1,mainTerritory=-1,mainRatio=Infinity,mainOrder=Infinity;
     for(let enemy=0;enemy<FACTIONS.length;enemy++){
-      if(enemy===f||eliminated[enemy])continue;
-      const ratio=shieldValue[enemy]/Math.max(1,INITIAL_SHIELD_VALUE);
+      if(enemy===f||state.factions[enemy].eliminated)continue;
+      const ratio=state.factions[enemy].shield.value/Math.max(1,INITIAL_SHIELD_VALUE);
       const territory=territoryCounts[enemy];
       const order=(enemy-f+FACTIONS.length)%FACTIONS.length;
 
@@ -4123,7 +4194,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function getSniperTargetCandidates(faction){
     const candidates=[];
     for(let enemy=0;enemy<FACTIONS.length;enemy++){
-      if(enemy!==faction&&!eliminated[enemy])candidates.push(enemy);
+      if(enemy!==faction&&!state.factions[enemy].eliminated)candidates.push(enemy);
     }
     return candidates;
   }
@@ -4138,7 +4209,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function queueSniperTargeting(faction,totalFirepower){
     const firepower=Math.max(0,Math.floor(totalFirepower));
-    if(firepower<=0||eliminated[faction])return;
+    if(firepower<=0||state.factions[faction].eliminated)return;
     const job={
       id:nextSniperAimId++,faction,firepower,
       elapsed:0,duration:SNIPER_AIM_MIN_SECONDS+Math.random()*(SNIPER_AIM_MAX_SECONDS-SNIPER_AIM_MIN_SECONDS),
@@ -4154,7 +4225,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function updateSniperAimJobs(dt){
     for(let i=sniperAimJobs.length-1;i>=0;i--){
       const job=sniperAimJobs[i];
-      if(eliminated[job.faction]||job.firepower<=0){sniperAimJobs.splice(i,1);continue;}
+      if(state.factions[job.faction].eliminated||job.firepower<=0){sniperAimJobs.splice(i,1);continue;}
       const candidates=getSniperTargetCandidates(job.faction);
       if(candidates.length===0){sniperAimJobs.splice(i,1);continue;}
       if(job.phase==='selecting'){
@@ -4185,7 +4256,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     }
   }
 
-  function queueProjectile(time,data){if(!eliminated[data.faction])fireQueue.push({time,data});}
+  function queueProjectile(time,data){if(!state.factions[data.faction].eliminated)fireQueue.push({time,data});}
   function shieldRadiusPx(value){
     if(value<=0)return 0;
     if(value<=INITIAL_SHIELD_VALUE){
@@ -4197,7 +4268,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   const shieldRadiusCacheValue=Array(FACTIONS.length).fill(NaN);
   const shieldRadiusCache=Array(FACTIONS.length).fill(0);
   function shieldRadiusForFaction(faction){
-    const value=shieldValue[faction];
+    const value=state.factions[faction].shield.value;
     if(shieldRadiusCacheValue[faction]!==value){
       shieldRadiusCacheValue[faction]=value;
       shieldRadiusCache[faction]=shieldRadiusPx(value);
@@ -4210,12 +4281,12 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   // 大球直径按当前剩余火力采用饱和型幂函数。
-  // v136：约为 1K -> 34.9px、1M -> 146.2px、100M -> 262.5px；火力无限增大时趋近 400px。
+  // 约为 1K -> 34.9px、1M -> 146.2px、100M -> 262.5px；火力无限增大时趋近 400px。
   const ORB_MIN_DIAMETER=5;
   const ORB_MAX_DIAMETER=400;
   const ORB_SIZE_COEFFICIENT=63;
   const ORB_SIZE_EXPONENT=.26;
-  // v39 大球独立物理参数：120Hz 下使用连续圆检测与接触迟滞，避免重复结算和边缘黏连。
+  // 大球独立物理参数：120Hz 下使用连续圆检测与接触迟滞，避免重复结算和边缘黏连。
   const ORB_CONTACT_PADDING=1.25;
   const ORB_CONTACT_RELEASE_GAP=5;
   const ORB_SHIELD_RELEASE_GAP=6;
@@ -4236,7 +4307,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function shieldHitDamage(kind,firepower){
-    // v26：护盾值与攻击火力严格按 1:1 抵消，不再使用武器伤害倍率。
+    // 护盾值与攻击火力严格按 1:1 抵消，不再使用武器伤害倍率。
     return Math.max(0,Math.floor(firepower));
   }
 
@@ -4248,25 +4319,25 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function triggerWeapon(faction,weapon,amount){
-    if(eliminated[faction])return;
+    if(state.factions[faction].eliminated)return;
     const totalFirepower=Math.max(0,Math.floor(amount));
     if(totalFirepower<=0)return;
     const totalVisualPower=firepowerToVisualPower(totalFirepower);
     if(weapon==='shield'){
-      shieldValue[faction]+=totalFirepower;
+      state.factions[faction].shield.value+=totalFirepower;
       if(gpuBattleActive&&gpuBattle?.ready)gpuBattle.queueShieldAdd(faction,totalFirepower);
-      shieldFlash[faction]=1;
-      shieldGainFlash[faction]=1;
-      log(`${FACTIONS[faction].name}结算护盾火力 ${formatNum(totalFirepower)}，等额叠加后为 ${formatNum(shieldValue[faction])}`,faction);
+      state.factions[faction].shield.flash=1;
+      state.factions[faction].shield.gainFlash=1;
+      log(`${FACTIONS[faction].name}结算护盾火力 ${formatNum(totalFirepower)}，等额叠加后为 ${formatNum(state.factions[faction].shield.value)}`,faction);
       return;
     }
-    const angle=cannonAngle[faction];
+    const angle=state.factions[faction].cannon.angle;
 
     if(weapon==='machine'){
-      machineFirepowerPool[faction]+=totalFirepower;
-      machineGainFlash[faction]=1;
-      const bulletRatio=getMachineBulletPowerRatio(machineFirepowerPool[faction]);
-      log(`${FACTIONS[faction].name}获得机枪火力 ${formatMachineFirepower(totalFirepower)}，当前剩余机枪火力为 ${formatMachineFirepower(machineFirepowerPool[faction])}；每发消耗 1 火力，当前每发携带 ${(bulletRatio*100).toFixed(1)}% 火力`,faction);
+      state.factions[faction].machine.firepower+=totalFirepower;
+      state.factions[faction].machine.gainFlash=1;
+      const bulletRatio=getMachineBulletPowerRatio(state.factions[faction].machine.firepower);
+      log(`${FACTIONS[faction].name}获得机枪火力 ${formatMachineFirepower(totalFirepower)}，当前剩余机枪火力为 ${formatMachineFirepower(state.factions[faction].machine.firepower)}；每发消耗 1 火力，当前每发携带 ${(bulletRatio*100).toFixed(1)}% 火力`,faction);
       return;
     }
 
@@ -4319,7 +4390,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function spawnProjectile(d){
-    if(eliminated[d.faction]&&!d.allowEliminated)return false;
+    if(state.factions[d.faction].eliminated&&!d.allowEliminated)return false;
     let sx,sy,tx,ty,dx,dy;
     const firepower=Math.max(0,Math.floor(d.firepower||0));
     if(firepower<=0)return false;
@@ -4336,7 +4407,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const len=Math.max(1,Math.hypot(dx,dy));
     const sp=d.speed ?? (d.kind==='orb'?135:d.kind==='machine'?MACHINE_BASE_SPEED:d.kind==='sniper'?SNIPER_PROJECTILE_SPEED:315);
     if(gpuBattleActive&&gpuBattle?.ready){
-      const visualSeed=d.visualSeed??machineShotIndex[d.faction]??0;
+      const visualSeed=d.visualSeed??state.factions[d.faction].machine.shotIndex??0;
       const radius=d.kind==='orb'?orbDiameterFromFirepower(firepower)*.5:d.kind==='machine'?2.2*MACHINE_CONTACT_SCALE:d.kind==='sniper'?SNIPER_PROJECTILE_DIAMETER*.5:2.7;
       const id=nextProjectileId;
       const queued=gpuBattle.queueSpawn({x:sx,y:sy,vx:dx/len*sp,vy:dy/len*sp,faction:d.faction,kind:gpuKindFromName(d.kind),id,visualSeed,radius,nominalSpeed:sp,firepower,allowEliminated:Boolean(d.allowEliminated),jitterA:(visualSeed*.61803398875+d.faction*1.73)%TAU,jitterB:(visualSeed*.271828+d.faction*2.41+1.2)%TAU});
@@ -4348,7 +4419,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     p.targetX=tx;p.targetY=ty;p.faction=d.faction;p.kind=d.kind;
     p.collisionKind=d.kind==='orb'?PROJECTILE_COLLISION_KIND.ORB:d.kind==='machine'?PROJECTILE_COLLISION_KIND.MACHINE:PROJECTILE_COLLISION_KIND.OTHER;
     p.power=power;p.initialFirepower=firepower;p.firepower=firepower;
-    p.rounds=d.rounds||firepower;p.visualPellets=d.kind==='machine'?1:(d.visualPellets||1);p.visualSeed=d.visualSeed??machineShotIndex[d.faction]??0;
+    p.rounds=d.rounds||firepower;p.visualPellets=d.kind==='machine'?1:(d.visualPellets||1);p.visualSeed=d.visualSeed??state.factions[d.faction].machine.shotIndex??0;
     // 大球使用当前剩余火力计算动态半径；其他弹丸保持既有尺寸。
     p.r=d.kind==='orb'?orbDiameterFromFirepower(firepower)*.5:d.kind==='machine'?2.2*MACHINE_CONTACT_SCALE:d.kind==='sniper'?SNIPER_PROJECTILE_DIAMETER*.5:2.7;
     p.nominalSpeed=sp;
@@ -4413,7 +4484,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const allowed=new Set(['own','enemy','neutral','mixed']);if(!allowed.has(mode))return false;
     // Isolate the painter from normal weapon production. The test Orb uses the
     // explicit settlement-spawn exception below, while every base stays silent.
-    perfLargeOrbTestActive=true;fireQueue.length=0;for(let faction=0;faction<4;faction++)eliminated[faction]=faction!==0;
+    perfLargeOrbTestActive=true;fireQueue.length=0;for(let faction=0;faction<4;faction++)state.factions[faction].eliminated=faction!==0;
     territoryCounts.fill(0);territoryCapturedTick.fill(Math.max(0,Math.round(simulationElapsed*TERRITORY_COLOR_TICK_HZ)));
     for(let y=0;y<GRID_H;y++)for(let x=0;x<GRID_W;x++){
       const index=y*GRID_W+x;let faction=255;
@@ -4810,7 +4881,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function getBeamShieldHit(x1,y1,x2,y2,attacker,power){
     let best=null;
     for(let f=0;f<FACTIONS.length;f++){
-      if(f===attacker || shieldValue[f]<=0) continue;
+      if(f===attacker || state.factions[f].shield.value<=0) continue;
       const cx=FACTIONS[f].base[0]*WV.w, cy=FACTIONS[f].base[1]*WV.h;
       const r=shieldRadiusForFaction(f);
       const hit=distanceToSegment(cx,cy,x1,y1,x2,y2);
@@ -4875,11 +4946,11 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function absorbShield(faction,incomingFirepower,x,y,sourceColor,sourceKind=''){
     const incoming=shieldHitDamage('',incomingFirepower);
-    if(incoming<=0||shieldValue[faction]<=0)return 0;
-    const radiusBefore=shieldRadiusPx(shieldValue[faction]);
-    const absorbed=Math.min(Math.floor(shieldValue[faction]),incoming);
-    shieldValue[faction]=Math.max(0,shieldValue[faction]-absorbed);
-    shieldFlash[faction]=1;
+    if(incoming<=0||state.factions[faction].shield.value<=0)return 0;
+    const radiusBefore=shieldRadiusPx(state.factions[faction].shield.value);
+    const absorbed=Math.min(Math.floor(state.factions[faction].shield.value),incoming);
+    state.factions[faction].shield.value=Math.max(0,state.factions[faction].shield.value-absorbed);
+    state.factions[faction].shield.flash=1;
     spawnShieldImpactEffects(faction,x,y,absorbed,incoming,radiusBefore,sourceColor,sourceKind);
     return absorbed;
   }
@@ -4930,7 +5001,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     if(p.kind!=='orb'||!p.orbShieldContacts)return;
     for(let f=0;f<FACTIONS.length;f++){
       const bit=1<<f;if(!(p.orbShieldContacts&bit))continue;
-      if(shieldValue[f]<=0||eliminated[f]){p.orbShieldContacts&=~bit;continue;}
+      if(state.factions[f].shield.value<=0||state.factions[f].eliminated){p.orbShieldContacts&=~bit;continue;}
       const base=getBasePos(f),radius=shieldRadiusForFaction(f);
       // 实心护盾只有在大球完全离开外边界后才解除接触锁，
       // 防止连续帧在同一覆盖区内重复扣除与反弹。
@@ -4943,14 +5014,14 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     if(p.kind==='orb')clearSeparatedOrbShieldContacts(p);
     const outer=projectileCollisionRadius(p);
     for(let f=0;f<FACTIONS.length;f++){
-      if(f===p.faction||eliminated[f])continue;
+      if(f===p.faction||state.factions[f].eliminated)continue;
       const cx=FACTIONS[f].base[0]*WV.w,cy=FACTIONS[f].base[1]*WV.h;
-      if(shieldValue[f]>0){
+      if(state.factions[f].shield.value>0){
         if(p.kind==='orb'&&(p.orbShieldContacts&(1<<f)))continue;
         const radius=shieldRadiusForFaction(f);
         const hitRadius=radius+outer;
         if((x1<cx-hitRadius&&x2<cx-hitRadius)||(x1>cx+hitRadius&&x2>cx+hitRadius)||(y1<cy-hitRadius&&y2<cy-hitRadius)||(y1>cy+hitRadius&&y2>cy+hitRadius))continue;
-        // v46：护盾为实心圆形碰撞体。弹丸外缘进入覆盖半径即命中；
+        // 护盾为实心圆形碰撞体。弹丸外缘进入覆盖半径即命中；
         // 若护盾扩张后将弹丸包入内部，t=0 会立即结算并将其向外反射或吸收。
         const t=segmentCircleEntry(x1,y1,x2,y2,cx,cy,hitRadius);
         if(t===null)continue;
@@ -4974,7 +5045,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function kickShieldRecoil(faction,nx,ny,loss){
     const strength=Math.min(105,35+Math.log2(Math.max(1,loss))*4.2);
-    shieldRecoilVX[faction]-=nx*strength;shieldRecoilVY[faction]-=ny*strength;
+    state.factions[faction].recoil.vx-=nx*strength;state.factions[faction].recoil.vy-=ny*strength;
   }
 
   function valuesWithinCollisionRatio(a,b){
@@ -5019,7 +5090,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function resolveOrbShieldHit(p,hit){
-    const faction=hit.faction,shieldBefore=Math.max(0,Math.floor(shieldValue[faction]));
+    const faction=hit.faction,shieldBefore=Math.max(0,Math.floor(state.factions[faction].shield.value));
     if(shieldBefore<=0)return false;
     const radiusBefore=hit.radius;
     p.orbShieldContacts|=1<<faction;
@@ -5029,11 +5100,11 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const loss=collisionEightyPercentLoss(p.firepower,shieldBefore);
     if(loss>0){
       syncProjectileFirepower(p,p.firepower-loss);
-      shieldValue[faction]=Math.max(1,shieldBefore-loss);
-      shieldFlash[faction]=1;
+      state.factions[faction].shield.value=Math.max(1,shieldBefore-loss);
+      state.factions[faction].shield.flash=1;
       spawnShieldImpactEffects(faction,hit.contactX,hit.contactY,loss,loss,radiusBefore,FACTIONS[p.faction].color,'orb');
     }else{
-      shieldFlash[faction]=Math.max(shieldFlash[faction],.55);
+      state.factions[faction].shield.flash=Math.max(state.factions[faction].shield.flash,.55);
       spawnShieldImpactEffects(faction,hit.contactX,hit.contactY,0,0,radiusBefore,FACTIONS[p.faction].color,'orb');
     }
 
@@ -5042,8 +5113,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function eliminateFaction(faction,attacker,x,y){
-    if(eliminated[faction])return;
-    const pendingMachineFirepower=Math.max(0,Math.floor(machineFirepowerPool[faction]))+Math.max(0,Math.ceil(machineVisualGroups[faction].damage));
+    if(state.factions[faction].eliminated)return;
+    const pendingMachineFirepower=Math.max(0,Math.floor(state.factions[faction].machine.firepower))+Math.max(0,Math.ceil(machineVisualGroups[faction].damage));
     const pendingBallValues=[];
     for(let i=balls.length-1;i>=0;i--){
       if(balls[i].faction!==faction)continue;
@@ -5051,17 +5122,17 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       balls.splice(i,1);
     }
     const resourceSummary=settleEliminatedFactionResources(faction,pendingMachineFirepower,pendingBallValues);
-    eliminated[faction]=true;eliminationFlash[faction]=1;shieldValue[faction]=0;shieldFlash[faction]=0;shieldGainFlash[faction]=0;machineGainFlash[faction]=0;
+    state.factions[faction].eliminated=true;state.factions[faction].eliminationFlash=1;state.factions[faction].shield.value=0;state.factions[faction].shield.flash=0;state.factions[faction].shield.gainFlash=0;state.factions[faction].machine.gainFlash=0;
     // 全局倍率对所有存活阵营共用；每次淘汰后，所有后续新弹珠统一提升 8 倍。
     globalStartValueMultiplier*=8;
-    machineFirepowerPool[faction]=0;cannonStepCarry[faction]=0;
+    state.factions[faction].machine.firepower=0;state.factions[faction].cannon.stepCarry=0;
     const group=machineVisualGroups[faction];group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;
     for(let i=fireQueue.length-1;i>=0;i--)if(fireQueue[i].data.faction===faction&&!fireQueue[i].data.allowEliminated)fireQueue.splice(i,1);
     for(let i=sniperAimJobs.length-1;i>=0;i--)if(sniperAimJobs[i].faction===faction)sniperAimJobs.splice(i,1);
     for(let i=beams.length-1;i>=0;i--)if(beams[i].faction===faction)beams.splice(i,1);
     const rewardSummary=[];
     for(let survivor=0;survivor<FACTIONS.length;survivor++){
-      if(eliminated[survivor])continue;
+      if(state.factions[survivor].eliminated)continue;
       const reward=survivor===attacker?2:1;
       addFactionRewardBalls(survivor,reward);
       rewardSummary.push(`${FACTIONS[survivor].name}+${reward}`);
@@ -5071,7 +5142,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     log(`${FACTIONS[faction].name}核心被${attackerName}弹丸击中，已被淘汰`,faction);
     if(resourceSummary.orbCount>0)log(`${FACTIONS[faction].name}淘汰结算：${pendingBallValues.length} 枚生成区弹珠与未结算机枪火力转为 ${resourceSummary.orbCount} 枚随机方向大球（合计 ${formatNum(resourceSummary.totalFirepower)} 火力）`,faction);
     if(rewardSummary.length)log(`淘汰奖励弹珠：${rewardSummary.join('，')}；所有存活阵营后续弹珠起始值 ×${globalStartValueMultiplier}`,attacker!==null?attacker:null);
-    updateBaseTextCaches();updateStats();
+    state.ui.baseTextDirty=true;state.ui.dirty=true;
   }
 
   function resolveProjectileInteractiveHit(p,hit){
@@ -5472,29 +5543,31 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function updateCannons(dt){
     for(let f=0;f<FACTIONS.length;f++){
-      if(eliminated[f])continue;
+      if(state.factions[f].eliminated)continue;
       const pendingGroup=machineVisualGroups[f];if(pendingGroup.rounds>0&&pendingGroup.count>=currentMachineVisualGroupSteps()&&!flushMachineVisualGroup(f))continue;
-      const prevAngle=cannonAngle[f],deltaDeg=CANNON_ROT_SPEED_DEG*dt;
-      cannonAngle[f]=normalizeAngle(cannonAngle[f]+CANNON_ROT_SPEED*dt);cannonStepCarry[f]+=deltaDeg;
-      const steps=Math.floor(cannonStepCarry[f]/MACHINE_FIRE_STEP_DEG);if(steps<=0)continue;
-      cannonStepCarry[f]-=steps*MACHINE_FIRE_STEP_DEG;
+      const prevAngle=state.factions[f].cannon.angle,deltaDeg=CANNON_ROT_SPEED_DEG*dt;
+      state.factions[f].cannon.angle=normalizeAngle(state.factions[f].cannon.angle+CANNON_ROT_SPEED*dt);state.factions[f].cannon.stepCarry+=deltaDeg;
+      const steps=Math.floor(state.factions[f].cannon.stepCarry/MACHINE_FIRE_STEP_DEG);if(steps<=0)continue;
+      state.factions[f].cannon.stepCarry-=steps*MACHINE_FIRE_STEP_DEG;
       const stepRad=MACHINE_FIRE_STEP_DEG*Math.PI/180,groupTarget=currentMachineVisualGroupSteps(),g=machineVisualGroups[f];
 
       for(let step=0;step<steps;step++){
-        const currentTotal=Math.floor(machineFirepowerPool[f]);if(currentTotal<=0)break;
+        const currentTotal=Math.floor(state.factions[f].machine.firepower);if(currentTotal<=0)break;
         const roundCount=Math.min(currentTotal,Math.max(1,Math.ceil(currentTotal*MACHINE_FIRE_PERCENT)));
         const bulletPowerRatio=getMachineBulletPowerRatio(currentTotal);
-        // v116：衰减后的整数火力同时作为伤害和弹药池消耗，结算统一向上取整。
+        // 衰减后的整数火力同时作为伤害和弹药池消耗，结算统一向上取整。
         const effectiveFirepower=Math.min(currentTotal,Math.max(1,Math.ceil(roundCount*bulletPowerRatio)));
-        const shotIndex=machineShotIndex[f]++,angleNoise=machineNaturalNoise(shotIndex,f+1)*MACHINE_ANGLE_NOISE_DEG*Math.PI/180;
+        const shotIndex=state.factions[f].machine.shotIndex;
+        state.factions[f].machine.shotIndex=(shotIndex+1)>>>0;
+        const angleNoise=machineNaturalNoise(shotIndex,f+1)*MACHINE_ANGLE_NOISE_DEG*Math.PI/180;
         const speedNoise=machineNaturalNoise(shotIndex,f+11)*MACHINE_SPEED_NOISE;
         const angle=normalizeAngle(prevAngle+(step+1)*stepRad+angleNoise),shotSpeed=MACHINE_BASE_SPEED*(1+speedNoise);
         if(g.count===0)g.seed=shotIndex;
         g.rounds+=roundCount;g.damage+=effectiveFirepower;g.sin+=Math.sin(angle)*roundCount;g.cos+=Math.cos(angle)*roundCount;g.speed+=shotSpeed*roundCount;g.count++;
-        machineFirepowerPool[f]=currentTotal-effectiveFirepower;
+        state.factions[f].machine.firepower=currentTotal-effectiveFirepower;
         if(g.count>=groupTarget&&!flushMachineVisualGroup(f))break;
-        if(machineFirepowerPool[f]<=0){
-          machineFirepowerPool[f]=0;flushMachineVisualGroup(f);log(`${FACTIONS[f].name}的剩余机枪火力已全部消耗`,f);break;
+        if(state.factions[f].machine.firepower<=0){
+          state.factions[f].machine.firepower=0;flushMachineVisualGroup(f);log(`${FACTIONS[f].name}的剩余机枪火力已全部消耗`,f);break;
         }
       }
     }
@@ -5502,8 +5575,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function updateWarGpu(dt){
     if(perfLargeOrbTestActive)fireQueue.length=0;else{updateCannons(dt);updateSniperAimJobs(dt);}territorySimCarry+=dt;const paintNow=territorySimCarry>=TERRITORY_STEP;if(paintNow)territorySimCarry%=TERRITORY_STEP;
-    for(let i=fireQueue.length-1;i>=0;i--){const item=fireQueue[i];item.time-=dt;if(item.time<=0){const maySpawn=!eliminated[item.data.faction]||item.data.allowEliminated;if(maySpawn&&!spawnProjectile(item.data)){item.time=0;continue;}const last=fireQueue.pop();if(i<fireQueue.length)fireQueue[i]=last;}}
-    for(let f=0;f<4;f++){shieldFlash[f]=Math.max(0,shieldFlash[f]-dt*1.8);shieldGainFlash[f]=Math.max(0,shieldGainFlash[f]-dt*1.45);machineGainFlash[f]=Math.max(0,machineGainFlash[f]-dt*1.45);eliminationFlash[f]=Math.max(0,eliminationFlash[f]-dt*.85);}
+    for(let i=fireQueue.length-1;i>=0;i--){const item=fireQueue[i];item.time-=dt;if(item.time<=0){const maySpawn=!state.factions[item.data.faction].eliminated||item.data.allowEliminated;if(maySpawn&&!spawnProjectile(item.data)){item.time=0;continue;}const last=fireQueue.pop();if(i<fireQueue.length)fireQueue[i]=last;}}
+    for(let f=0;f<4;f++){const factionState=state.factions[f];factionState.shield.flash=Math.max(0,factionState.shield.flash-dt*1.8);factionState.shield.gainFlash=Math.max(0,factionState.shield.gainFlash-dt*1.45);factionState.machine.gainFlash=Math.max(0,factionState.machine.gainFlash-dt*1.45);factionState.eliminationFlash=Math.max(0,factionState.eliminationFlash-dt*.85);}
     for(const cell of converterCells)cell.highlightStrength=Math.max(0,(cell.highlightStrength||0)-dt*CONVERTER_HIGHLIGHT_FADE);
     consumeGpuLargeOrbCommand();injectPerfStressBatch();gpuBattle.step(dt,paintNow,getTerritoryCaptureFirepower());
     for(let i=beams.length-1;i>=0;i--){beams[i].life-=dt;if(beams[i].life<=0){const last=beams.pop();if(i<beams.length)beams[i]=last;}}
@@ -5520,19 +5593,19 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
     for(let i=fireQueue.length-1;i>=0;i--){
       const item=fireQueue[i];item.time-=dt;
-      if(item.time<=0){const maySpawn=!eliminated[item.data.faction]||item.data.allowEliminated;if(maySpawn&&!spawnProjectile(item.data)){item.time=0;continue;}const last=fireQueue.pop();if(i<fireQueue.length)fireQueue[i]=last;}
+      if(item.time<=0){const maySpawn=!state.factions[item.data.faction].eliminated||item.data.allowEliminated;if(maySpawn&&!spawnProjectile(item.data)){item.time=0;continue;}const last=fireQueue.pop();if(i<fireQueue.length)fireQueue[i]=last;}
     }
     for(let f=0;f<4;f++){
-      shieldFlash[f]=Math.max(0,shieldFlash[f]-dt*1.8);
-      shieldGainFlash[f]=Math.max(0,shieldGainFlash[f]-dt*1.45);
-      machineGainFlash[f]=Math.max(0,machineGainFlash[f]-dt*1.45);
-      eliminationFlash[f]=Math.max(0,eliminationFlash[f]-dt*.85);
-      shieldRecoilX[f]+=shieldRecoilVX[f]*dt;shieldRecoilY[f]+=shieldRecoilVY[f]*dt;
+      state.factions[f].shield.flash=Math.max(0,state.factions[f].shield.flash-dt*1.8);
+      state.factions[f].shield.gainFlash=Math.max(0,state.factions[f].shield.gainFlash-dt*1.45);
+      state.factions[f].machine.gainFlash=Math.max(0,state.factions[f].machine.gainFlash-dt*1.45);
+      state.factions[f].eliminationFlash=Math.max(0,state.factions[f].eliminationFlash-dt*.85);
+      state.factions[f].recoil.x+=state.factions[f].recoil.vx*dt;state.factions[f].recoil.y+=state.factions[f].recoil.vy*dt;
       const velocityDamping=Math.exp(-dt*11),positionDamping=Math.exp(-dt*14);
-      shieldRecoilVX[f]*=velocityDamping;shieldRecoilVY[f]*=velocityDamping;
-      shieldRecoilX[f]*=positionDamping;shieldRecoilY[f]*=positionDamping;
-      const recoilLength=Math.hypot(shieldRecoilX[f],shieldRecoilY[f]);
-      if(recoilLength>7){const scale=7/recoilLength;shieldRecoilX[f]*=scale;shieldRecoilY[f]*=scale;}
+      state.factions[f].recoil.vx*=velocityDamping;state.factions[f].recoil.vy*=velocityDamping;
+      state.factions[f].recoil.x*=positionDamping;state.factions[f].recoil.y*=positionDamping;
+      const recoilLength=Math.hypot(state.factions[f].recoil.x,state.factions[f].recoil.y);
+      if(recoilLength>7){const scale=7/recoilLength;state.factions[f].recoil.x*=scale;state.factions[f].recoil.y*=scale;}
     }
     for(const cell of converterCells)cell.highlightStrength=Math.max(0,(cell.highlightStrength||0)-dt*CONVERTER_HIGHLIGHT_FADE);
 
@@ -5553,10 +5626,10 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       if(p.kind==='orb')advanceOrbWithWallReflection(p,dt);
       else{p.x+=p.vx*dt;p.y+=p.vy*dt;bounceProjectileOnWalls(p);}
     }
-    if(PERF_DEBUG_ACTIVE)perfWarMoveMs+=performance.now()-movePerfStart;
+    performanceMonitor?.measure('warMoveMs',movePerfStart);
     const pairPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     resolveProjectileFirepowerInteractions();
-    if(PERF_DEBUG_ACTIVE)perfWarPairMs+=performance.now()-pairPerfStart;
+    performanceMonitor?.measure('warPairMs',pairPerfStart);
 
     // 第二阶段：处理火力耗尽、领土染色以及护盾／基底碰撞。
     const paintPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
@@ -5589,7 +5662,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       if(paintNow){p.paintX=p.x;p.paintY=p.y;}
       pushTrailSegment(p);
     }
-    if(PERF_DEBUG_ACTIVE)perfWarPaintMs+=performance.now()-paintPerfStart;
+    performanceMonitor?.measure('warPaintMs',paintPerfStart);
     trailUpdateCarry+=dt;
     if(trailUpdateCarry>=TRAIL_UPDATE_STEP){const trailDt=trailUpdateCarry;trailUpdateCarry%=TRAIL_UPDATE_STEP;renderTrailBatch(trailDt);}
 
@@ -5640,10 +5713,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
   }
 
-  const VIDEO_PRESETS=Object.freeze({
-    '1080':Object.freeze({width:1920,height:1080,fps:60,bitrate:50000000,avcCodec:'avc1.64002a',label:'1080P60 HQ'}),
-    '2160':Object.freeze({width:3840,height:2160,fps:30,bitrate:120000000,avcCodec:'avc1.640033',label:'4K30 HQ'})
-  });
+  const VIDEO_PRESETS=CONFIG.recording.presets;
   const HQ_RENDER_RESULT=Object.freeze({STARTED:'started',FALLBACK:'fallback',CANCELLED:'cancelled',FAILED:'failed'});
   const matchVideoCanvas=document.createElement('canvas');
   const matchVideoCtx=matchVideoCanvas.getContext('2d',{alpha:false,desynchronized:true});
@@ -5805,7 +5875,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
       while(!matchVideoRenderStopRequested&&!gameEnded){
         videoRenderTimelineSeconds=simulationElapsed;
-        drawLeft();drawWar();if(gpuBattleActive&&gpuBattle?.ready)await gpuBattle.waitIdle();drawMatchVideoFrame();
+        renderers.matrix.render();renderers.battle.render();if(gpuBattleActive&&gpuBattle?.ready)await gpuBattle.waitIdle();drawMatchVideoFrame();
         await source.add(matchVideoRenderFrame*frameDuration,frameDuration,{keyFrame:matchVideoRenderFrame%keyFrameStep===0});
         matchVideoRenderFrame++;
         for(let step=0;step<simStepsPerFrame&&!gameEnded;step++)simulateStep(SIM_STEP);
@@ -5819,7 +5889,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
       if(gameEnded&&!matchVideoRenderStopRequested){
         videoRenderTimelineSeconds=simulationElapsed;
-        drawLeft();drawWar();if(gpuBattleActive&&gpuBattle?.ready)await gpuBattle.waitIdle();drawMatchVideoFrame();
+        renderers.matrix.render();renderers.battle.render();if(gpuBattleActive&&gpuBattle?.ready)await gpuBattle.waitIdle();drawMatchVideoFrame();
         const holdFrames=Math.round(preset.fps*.9);
         for(let i=0;i<holdFrames;i++){
           await source.add(matchVideoRenderFrame*frameDuration,frameDuration,{keyFrame:matchVideoRenderFrame%keyFrameStep===0});
@@ -6063,6 +6133,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   let lastOverloadBadgeText='';
   function updateSimulationOverloadBadge(){
     if(!UI.overloadBadge)return;
+    const droppedSimulationTime=gameLoop?.snapshot().droppedSimulationTime||0;
     const text=droppedSimulationTime>1e-6?`模拟过载 · 丢弃 ${droppedSimulationTime.toFixed(droppedSimulationTime>=10?0:2)}s`:'模拟正常';
     if(text===lastOverloadBadgeText)return;
     lastOverloadBadgeText=text;UI.overloadBadge.textContent=text;UI.overloadBadge.classList.toggle('warning',droppedSimulationTime>1e-6);
@@ -6072,18 +6143,18 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     const p=updatePercentageCache();
     if(ensureStatsDom()){
       for(let i=0;i<4;i++){
-        const text=eliminated[i]?'已淘汰':p[i].toFixed(1)+'%';
-        if(statDisplayCache[i]!==text){statDisplayCache[i]=text;statValueEls[i].textContent=text;statBarEls[i].style.width=eliminated[i]?'0%':text;}
+        const text=state.factions[i].eliminated?'已淘汰':p[i].toFixed(1)+'%';
+        if(statDisplayCache[i]!==text){statDisplayCache[i]=text;statValueEls[i].textContent=text;statBarEls[i].style.width=state.factions[i].eliminated?'0%':text;}
       }
     }
-    UI.factionButtons.forEach(btn=>btn.classList.toggle('eliminated',eliminated[Number(btn.dataset.faction)]));
+    UI.factionButtons.forEach(btn=>btn.classList.toggle('eliminated',state.factions[Number(btn.dataset.faction)].eliminated));
     const timer=UI.roundText;
     if(timer){
       if(gameEnded&&winnerFaction>=0)timer.textContent=`终局 ${formatClock(simulationElapsed)} · ${FACTIONS[winnerFaction].name}获胜`;
       else if(monochromeFaction>=0)timer.textContent=`${FACTIONS[monochromeFaction].name}单色锁定 ${monochromeHoldSeconds.toFixed(1)} / ${MONOCHROME_WIN_SECONDS.toFixed(0)}秒`;
       else timer.textContent=`运行 ${formatClock(simulationElapsed)} · 无上限`;
     }
-    const entityCount=gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length;
+    const displayFps=gameLoop?.snapshot().displayFps||0,entityCount=gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length;
     const perf=UI.perfText;if(perf)perf.textContent=`FPS ${displayFps||'--'} · 实体 ${entityCount} · FX ${pulses.length} · 弹珠 ${balls.length}`;
     if(UI.mechanicsText)UI.mechanicsText.textContent='倍率 ×2 / ×4 / ×8';
     updateSimulationOverloadBadge();
@@ -6094,7 +6165,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     drawPowerChart();
   }
   function getPendingMachineFirepower(faction){
-    return machineFirepowerPool[faction];
+    return state.factions[faction].machine.firepower;
   }
   function finiteChartValue(value){
     if(!Number.isFinite(value))return Number.MAX_VALUE;
@@ -6103,7 +6174,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   function getFactionCumulativeFirepower(faction){
     let total=0;
     for(const key of STOCK_KEYS){
-      const value=finiteChartValue(stocks[faction][key]);
+      const value=finiteChartValue(state.factions[faction].stocks[key]);
       if(total>Number.MAX_VALUE-value)return Number.MAX_VALUE;
       total+=value;
     }
@@ -6176,7 +6247,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       pctx.strokeStyle='rgba(74,120,168,.14)'; pctx.beginPath(); pctx.moveTo(m.l,y); pctx.lineTo(m.l+iw,y); pctx.stroke();
       pctx.fillStyle='rgba(180,216,240,.70)'; pctx.fillText(formatNum(tick),m.l-6*dpr,y);
     }
-    // v72：0–30 秒保持固定横轴；超过 30 秒后将从 0 秒至当前时间的全部历史压缩进同一宽度。
+    // 0–30 秒保持固定横轴；超过 30 秒后将从 0 秒至当前时间的全部历史压缩进同一宽度。
     const axisStart=0;
     const axisEnd=Math.max(30,simulationElapsed);
     const axisSpan=axisEnd;
@@ -6213,7 +6284,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       el.textContent='总火力 '+formatNum(getFactionCumulativeFirepower(faction));
     });
   }
-  function updateStocks(){UI.stockEls.forEach(el=>{if(eliminated[selectedFaction]){el.textContent='阵营已淘汰';return;}const key=el.dataset.stock,total=stocks[selectedFaction][key],baseMultiple=Math.floor(total/BASE_BALL_VALUE);if(key==='machine'){const pending=getPendingMachineFirepower(selectedFaction),ratio=getMachineBulletPowerRatio(pending);el.textContent=`待发 ${formatMachineFirepower(pending)} · 单发 ${(ratio*100).toFixed(1)}%`;}else{el.textContent=`累计 ${formatNum(total)} · ${formatNum(baseMultiple)}×基础球`;}});updatePowerLegend();}
+  function updateStocks(){UI.stockEls.forEach(el=>{if(state.factions[selectedFaction].eliminated){el.textContent='阵营已淘汰';return;}const key=el.dataset.stock,total=state.factions[selectedFaction].stocks[key],baseMultiple=Math.floor(total/BASE_BALL_VALUE);if(key==='machine'){const pending=getPendingMachineFirepower(selectedFaction),ratio=getMachineBulletPowerRatio(pending);el.textContent=`待发 ${formatMachineFirepower(pending)} · 单发 ${(ratio*100).toFixed(1)}%`;}else{el.textContent=`累计 ${formatNum(total)} · ${formatNum(baseMultiple)}×基础球`;}});updatePowerLegend();}
 
   function drawText(ctx,text,x,y,{
     fillStyle='#ffffff',
@@ -6343,13 +6414,13 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     for(let f=0;f<4;f++){
       const ctx=baseTextContexts[f],col=FACTIONS[f].color;
       ctx.clearRect(0,0,180,76);
-      if(eliminated[f]){
+      if(state.factions[f].eliminated){
         drawText(ctx,'ELIMINATED',90,18,{fillStyle:'#ffb8c2',font:'800 15px monospace',align:'center',baseline:'middle'});
         drawText(ctx,'CORE DESTROYED',90,39,{fillStyle:'rgba(255,210,216,.72)',font:'8px monospace',align:'center',baseline:'middle'});
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:'rgba(160,170,184,.72)',font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }else{
-        drawBaseValueRow(ctx,'shield',formatNum(shieldValue[f]),16,col,shieldGainFlash[f],16);
-        drawBaseValueRow(ctx,'machine',formatMachineFirepower(machineFirepowerPool[f]),45,col,machineGainFlash[f],12);
+        drawBaseValueRow(ctx,'shield',formatNum(state.factions[f].shield.value),16,col,state.factions[f].shield.gainFlash,16);
+        drawBaseValueRow(ctx,'machine',formatMachineFirepower(state.factions[f].machine.firepower),45,col,state.factions[f].machine.gainFlash,12);
         drawText(ctx,`${FACTIONS[f].name}  ${hudPercentages[f].toFixed(1)}%`,90,67,{fillStyle:col,font:'700 9px sans-serif',align:'center',baseline:'middle'});
       }
     }
@@ -6411,7 +6482,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
   }
 
   function drawRotorPegTrails(){
-    // v192：拖尾只来自外圈真实碰撞点的历史位置，中心固定点不产生光丝。
+    // 拖尾只来自外圈真实碰撞点的历史位置，中心固定点不产生光丝。
     lctx.save();
     lctx.globalCompositeOperation='lighter';
     lctx.lineCap='round';lctx.lineJoin='round';
@@ -6449,7 +6520,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     drawConverterHighlights();
     drawRotorPegTrails();
 
-    // v118：只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
+    // 只绘制真实参与碰撞的金属点，移除无碰撞体的装饰轨道外圈。
     // 批量绘制碰撞点，避免每个点重复 save/restore 和路径提交。
     lctx.save();lctx.shadowColor='rgba(168,227,238,.56)';lctx.shadowBlur=3;lctx.fillStyle='#718894';lctx.strokeStyle='rgba(218,241,245,.58)';lctx.lineWidth=.6;
     lctx.beginPath();
@@ -6472,7 +6543,8 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
         lctx.fillStyle=fieldGrad;
         lctx.fillRect(cell.x,top,cell.w,height);
         lctx.globalAlpha=.55;lctx.strokeStyle='rgba(91,207,239,.28)';lctx.lineWidth=.75;
-        lctx.beginPath();lctx.moveTo(cell.x+2,top+10);lctx.lineTo(cell.x+cell.w-2,top+10);lctx.moveTo(cell.x+2,bottom-8);lctx.lineTo(cell.x+cell.w-2,bottom-8);lctx.stroke();
+        // 仅保留入口提示线，底部不再绘制任何可能被误认成挡板的横线。
+        lctx.beginPath();lctx.moveTo(cell.x+2,top+10);lctx.lineTo(cell.x+cell.w-2,top+10);lctx.stroke();
 
         // 参考图式双行上升箭头：保持低密度，但让中央力场成为视觉焦点。
         lctx.globalCompositeOperation='lighter';
@@ -6505,14 +6577,18 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       const grd=lctx.createLinearGradient(cell.x,BOARD.multTop,cell.x,cell.bottom);grd.addColorStop(0,'rgba(15,31,51,.26)');grd.addColorStop(.58,'rgba(11,24,44,.36)');grd.addColorStop(1,'rgba(4,14,29,.56)');
       lctx.fillStyle=grd;lctx.fillRect(cell.left,BOARD.multTop,cell.right-cell.left,cell.bottom-BOARD.multTop);
       lctx.strokeStyle=colorWithAlpha(col,.48);lctx.lineWidth=1;lctx.shadowColor='transparent';lctx.shadowBlur=0;
-      lctx.beginPath();lctx.moveTo(cell.left,BOARD.multTop);lctx.lineTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.multTop);lctx.stroke();
+      lctx.beginPath();
+      if(cell.leftBarrier){lctx.moveTo(cell.left,BOARD.multTop);lctx.lineTo(cell.left,cell.bottom);}
+      lctx.moveTo(cell.left,cell.bottom);lctx.lineTo(cell.right,cell.bottom);
+      if(cell.rightBarrier){lctx.moveTo(cell.right,cell.bottom);lctx.lineTo(cell.right,BOARD.multTop);}
+      lctx.stroke();
       lctx.globalAlpha=.52;lctx.strokeStyle='rgba(99,207,236,.36)';lctx.lineWidth=.65;
       lctx.beginPath();lctx.moveTo(cell.left+2,BOARD.multTop+8);lctx.lineTo(cell.right-2,BOARD.multTop+8);lctx.stroke();
       lctx.restore();
       drawText(lctx,cell.type.toUpperCase(),cell.x+cell.w/2,cell.bottom-13,{fillStyle:'rgba(240,249,252,.94)',font:'800 10px monospace',align:'center'});
     }
 
-    // v213：去掉挡板侧面厚度与斜接脚装饰，仅保留主体玻璃面、斜切顶和必要高光。
+    // 去掉挡板侧面厚度与斜接脚装饰，仅保留主体玻璃面、斜切顶和必要高光。
     lctx.save();
     const capTop=BOARD.multTop-MULT_WALL_CAP_HEIGHT;
     const railY=BOARD.multBottom,plateHalf=MULT_SEPARATOR_HALF_WIDTH;
@@ -6545,8 +6621,9 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
       lctx.restore();
     };
-    const drawGlassBaseRail=()=>{
-      const left=PLAYFIELD.left-2,right=PLAYFIELD.right+2,top=railY-5,bottom=railY+6;
+    const drawGlassBaseRail=(left,right)=>{
+      if(right-left<=20)return;
+      const top=railY-5,bottom=railY+6;
       lctx.save();
       lctx.globalAlpha=1;lctx.globalCompositeOperation='source-over';lctx.shadowColor='rgba(57,212,245,.52)';lctx.shadowBlur=9;
       const railGrad=lctx.createLinearGradient(0,top,0,bottom);
@@ -6560,8 +6637,14 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       lctx.restore();
     };
 
-    // 先画连续底轨，再把所有侧边立柱压入底轨，形成参考图中的统一结构。
-    drawGlassBaseRail();
+    // 底轨在中央空隙处断开，但空隙左右两侧的竖向胶囊挡板继续保留。
+    const gap=getGapFieldCell();
+    if(gap){
+      drawGlassBaseRail(PLAYFIELD.left-2,gap.x);
+      drawGlassBaseRail(gap.x+gap.w,PLAYFIELD.right+2);
+    }else{
+      drawGlassBaseRail(PLAYFIELD.left-2,PLAYFIELD.right+2);
+    }
     drawGlassPlate(PLAYFIELD.left,capTop,railY);
     for(const wall of multBoundaries)drawGlassPlate(wall.x,capTop,railY);
     drawGlassPlate(PLAYFIELD.right,capTop,railY);
@@ -6605,7 +6688,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     }
 
     for(const b of balls){
-      if(eliminated[b.faction])continue;
+      if(state.factions[b.faction].eliminated)continue;
       lctx.save();
       for(let k=0;k<b.trailCount;k++){
         const index=(b.trailHead-b.trailCount+k+BALL_TRAIL_CAPACITY)%BALL_TRAIL_CAPACITY,a=(k+1)/Math.max(1,b.trailCount);
@@ -6614,7 +6697,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       }
       lctx.globalAlpha=1;lctx.shadowColor=FACTIONS[b.faction].color;lctx.shadowBlur=20;
       lctx.fillStyle='rgba(1,7,17,.96)';lctx.strokeStyle=FACTIONS[b.faction].color;lctx.lineWidth=2.4;
-      // v121：绘制半径与物理碰撞半径严格一致，消除视觉上的隔空碰撞。
+      // 绘制半径与物理碰撞半径严格一致，消除视觉上的隔空碰撞。
       lctx.beginPath();lctx.arc(b.x,b.y,b.r,0,TAU);lctx.fill();lctx.stroke();
       lctx.restore();
       drawBallValueLabel(b);
@@ -6803,7 +6886,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     ctx.save();ctx.globalCompositeOperation='source-over';ctx.lineCap='round';ctx.lineJoin='round';ctx.textAlign='center';ctx.textBaseline='middle';
     for(const job of sniperAimJobs){
       const targetFaction=job.phase==='locked'?job.selectedTargetFaction:job.currentTargetFaction;
-      if(targetFaction<0||eliminated[targetFaction])continue;
+      if(targetFaction<0||state.factions[targetFaction].eliminated)continue;
       const source=FACTIONS[job.faction],target=FACTIONS[targetFaction];
       const sx=source.base[0]*WV.w,sy=source.base[1]*WV.h,tx=target.base[0]*WV.w,ty=target.base[1]*WV.h;
       const pulse=.5+.5*Math.sin(now*8.5+job.id*.7),locked=job.phase==='locked';
@@ -6851,22 +6934,22 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     }
   }
 
-  function drawWar(){
-    if(gpuBattleActive&&gpuBattle?.ready){gpuBattle.render();return;}
+  function drawBattleBackgroundLayer(){
     if(battleStaticCacheDirty){buildBattleStatic();battleStaticCacheDirty=false;}
-    wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);
-    const t=getVisualTimeSeconds();
-    // battleStaticCanvas 完全不透明，copy 可直接替代 clearRect + source-over 两次全画布操作。
+    // battleStaticCanvas is opaque, so copy replaces clearRect + source-over without changing pixels.
     wctx.globalCompositeOperation='copy';wctx.globalAlpha=1;wctx.imageSmoothingEnabled=true;wctx.imageSmoothingQuality='high';wctx.drawImage(battleStaticCanvas,0,0,WV.w,WV.h);
     wctx.globalCompositeOperation='source-over';
     if(territoryGpuActive)renderTerritoryGpu();
     wctx.save();wctx.imageSmoothingEnabled=false;wctx.globalAlpha=.97;wctx.drawImage(territoryGpuActive?getTerritoryRenderCanvas():territoryCanvas,0,0,WV.w,WV.h);wctx.restore();
     wctx.save();wctx.globalCompositeOperation='lighter';wctx.globalAlpha=1;wctx.imageSmoothingEnabled=true;wctx.drawImage(combinedTrailCanvas,0,0,WV.w,WV.h);wctx.restore();
+  }
+
+  function drawProjectileLayer(t){
     const preparePerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     prepareProjectileRenderFrame();
     if(PERF_DEBUG_ACTIVE)perfRenderPrepareMs+=performance.now()-preparePerfStart;
 
-    // v108：移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
+    // 移除战场中心的可视化装饰物（中心辉光、旋转刻线、虚线圆环）。
 
     wctx.save();wctx.globalCompositeOperation='lighter';
     for(let f=0;f<4;f++){
@@ -7066,35 +7149,46 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     wctx.restore();
     const effectsPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
     for(const b of beams){const a=Math.min(1,b.life*6);wctx.save();wctx.globalAlpha=a;wctx.lineCap='round';wctx.globalCompositeOperation='lighter';wctx.strokeStyle=FACTIONS[b.faction].color;wctx.lineWidth=7;wctx.beginPath();wctx.moveTo(b.x1,b.y1);wctx.lineTo(b.x2,b.y2);wctx.stroke();wctx.strokeStyle='#f8ffff';wctx.lineWidth=1.3;wctx.beginPath();wctx.moveTo(b.x1,b.y1);wctx.lineTo(b.x2,b.y2);wctx.stroke();wctx.restore();}
-    drawWarEffects();
     if(PERF_DEBUG_ACTIVE)perfRenderEffectsMs+=performance.now()-effectsPerfStart;
+  }
 
+  function drawBattleBaseLayer(t){
     for(let f=0;f<4;f++){
       const bx=FACTIONS[f].base[0]*WV.w,by=FACTIONS[f].base[1]*WV.h,col=FACTIONS[f].color,physicalRadius=shieldRadiusForFaction(f);
       const baseShieldVisual=getBaseShieldVisualStyle(f);
-      if(!eliminated[f]&&shieldValue[f]>0){
-        drawShieldWithBaseOuterStyle(wctx,bx,by,physicalRadius,baseShieldVisual.color,shieldFlash[f],baseShieldVisual.brightness,t*SHIELD_CLOCKWISE_ROTATION_SPEED);
+      if(!state.factions[f].eliminated&&state.factions[f].shield.value>0){
+        drawShieldWithBaseOuterStyle(wctx,bx,by,physicalRadius,baseShieldVisual.color,state.factions[f].shield.flash,baseShieldVisual.brightness,t*SHIELD_CLOCKWISE_ROTATION_SPEED);
       }
-      wctx.save();wctx.globalAlpha=eliminated[f]?.28:1;wctx.drawImage(baseHudSprites[f],bx-88,by-88);wctx.restore();
-      const angle=cannonAngle[f],muzzle=getCannonMuzzle(f,angle);
-      wctx.save();wctx.globalAlpha=eliminated[f]?.25:1;wctx.strokeStyle=eliminated[f]?'#5e6672':col;wctx.lineWidth=7;wctx.lineCap='round';wctx.beginPath();wctx.moveTo(bx,by);wctx.lineTo(muzzle.x,muzzle.y);wctx.stroke();
+      wctx.save();wctx.globalAlpha=state.factions[f].eliminated?.28:1;wctx.drawImage(baseHudSprites[f],bx-88,by-88);wctx.restore();
+      const angle=state.factions[f].cannon.angle,muzzle=getCannonMuzzle(f,angle);
+      wctx.save();wctx.globalAlpha=state.factions[f].eliminated?.25:1;wctx.strokeStyle=state.factions[f].eliminated?'#5e6672':col;wctx.lineWidth=7;wctx.lineCap='round';wctx.beginPath();wctx.moveTo(bx,by);wctx.lineTo(muzzle.x,muzzle.y);wctx.stroke();
       // 外层阵营色圆是炮管轴心外观；真正核心仅为最中心的白色小圆点。
-      wctx.fillStyle=eliminated[f]?'#090c12':col;wctx.strokeStyle=eliminated[f]?'#7b8490':'#f2ffff';wctx.lineWidth=2.2;wctx.beginPath();wctx.arc(bx,by,BASE_AXLE_RADIUS,0,TAU);wctx.fill();wctx.stroke();
-      if(eliminated[f]){wctx.strokeStyle='#ff6378';wctx.lineWidth=2.4;wctx.beginPath();wctx.moveTo(bx-6,by-6);wctx.lineTo(bx+6,by+6);wctx.moveTo(bx+6,by-6);wctx.lineTo(bx-6,by+6);wctx.stroke();}
+      wctx.fillStyle=state.factions[f].eliminated?'#090c12':col;wctx.strokeStyle=state.factions[f].eliminated?'#7b8490':'#f2ffff';wctx.lineWidth=2.2;wctx.beginPath();wctx.arc(bx,by,BASE_AXLE_RADIUS,0,TAU);wctx.fill();wctx.stroke();
+      if(state.factions[f].eliminated){wctx.strokeStyle='#ff6378';wctx.lineWidth=2.4;wctx.beginPath();wctx.moveTo(bx-6,by-6);wctx.lineTo(bx+6,by+6);wctx.moveTo(bx+6,by-6);wctx.lineTo(bx-6,by+6);wctx.stroke();}
       else{wctx.fillStyle='#ffffff';wctx.globalAlpha=.92;wctx.beginPath();wctx.arc(bx,by,BASE_CORE_HIT_RADIUS,0,TAU);wctx.fill();}
       wctx.restore();
-      if(eliminationFlash[f]>0){wctx.save();wctx.globalAlpha=eliminationFlash[f]*.7;wctx.strokeStyle='#ff6378';wctx.lineWidth=2;wctx.beginPath();wctx.arc(bx,by,BASE_BODY_RADIUS+(1-eliminationFlash[f])*42,0,TAU);wctx.stroke();wctx.restore();}
+      if(state.factions[f].eliminationFlash>0){wctx.save();wctx.globalAlpha=state.factions[f].eliminationFlash*.7;wctx.strokeStyle='#ff6378';wctx.lineWidth=2;wctx.beginPath();wctx.arc(bx,by,BASE_BODY_RADIUS+(1-state.factions[f].eliminationFlash)*42,0,TAU);wctx.stroke();wctx.restore();}
       wctx.drawImage(baseTextCanvases[f],bx-90,by-28);
     }
+  }
+
+  function drawWar(){
+    if(gpuBattleActive&&gpuBattle?.ready){gpuBattle.render();return;}
+    wctx.setTransform(wscale.sx,0,0,wscale.sy,0,0);
+    const t=getVisualTimeSeconds();
+    drawBattleBackgroundLayer();
+    drawProjectileLayer(t);
+    const effectsStart=PERF_DEBUG_ACTIVE?performance.now():0;drawWarEffects();if(PERF_DEBUG_ACTIVE)perfRenderEffectsMs+=performance.now()-effectsStart;
+    drawBattleBaseLayer(t);
     drawSniperTargeting();
     wctx.globalAlpha=1;wctx.globalCompositeOperation='source-over';
   }
   function completeMonochromeVictory(faction){
     if(gameEnded)return;
-    gameEnded=true;winnerFaction=faction;monochromeFaction=faction;monochromeHoldSeconds=MONOCHROME_WIN_SECONDS;paused=true;simAccumulator=0;
+    gameEnded=true;winnerFaction=faction;monochromeFaction=faction;monochromeHoldSeconds=MONOCHROME_WIN_SECONDS;paused=true;gameLoop?.clearAccumulator();
     if(UI.pauseBtn){UI.pauseBtn.textContent='已结束';UI.pauseBtn.disabled=true;}
     log(`${FACTIONS[faction].name}已连续 ${MONOCHROME_WIN_SECONDS} 秒占领全部领土，本局结束。`,faction);
-    updateStats();
+    state.ui.dirty=true;
     if(matchRecorder&&matchRecorder.state!=='inactive'){
       matchRecordingStatusText='终局画面…';updateMatchRecordingControls();
       if(matchRecordingNaturalStopTimer)clearTimeout(matchRecordingNaturalStopTimer);
@@ -7119,221 +7213,304 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
     if(monochromeHoldSeconds>=MONOCHROME_WIN_SECONDS-1e-9)completeMonochromeVictory(fullFaction);
   }
 
-  let renderAccumulatorMs=0,simAccumulator=0,warSimulationCarry=0,droppedSimulationTime=0,fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+  // 5. Performance storage shared by hot-path instrumentation.
   let perfSimMs=0,perfBallsMs=0,perfWarSimMs=0,perfWarMoveMs=0,perfWarPairMs=0,perfWarPaintMs=0,perfWarMs=0,perfLeftMs=0,perfFrameSamples=0,perfBallSteps=0,perfSimSteps=0,perfRenderSamples=0;
   let perfTerritoryPaintMs=0,perfTerritoryUploadMs=0,perfProjectileBroadphaseMs=0,perfProjectileResolveMs=0,perfTrailUpdateMs=0,perfSniperTrailMs=0;
   let perfRenderPrepareMs=0,perfRenderMachineMs=0,perfRenderSniperMs=0,perfRenderOrbMs=0,perfRenderEffectsMs=0;
   let perfTerritoryPaintSamples=0,perfTerritoryUploadSamples=0,perfTrailSamples=0;
-   const perfCounters={
-     territoryUploadRects:0,territoryUploadPixels:0,ownerUploadRects:0,ownerUploadPixels:0,tickUploadRects:0,tickUploadPixels:0,
-     impactMaskHits:0,impactMaskMisses:0,projectilePairCandidates:0,projectilePairResolved:0,
-     sniperTrailSegments:0,projectilePeakCount:0,spawnQueuePeak:0,spawnQueueRejected:0,spawnQueueDroppedOldest:0
-   };
+  const perfCounters={
+    territoryUploadRects:0,territoryUploadPixels:0,ownerUploadRects:0,ownerUploadPixels:0,tickUploadRects:0,tickUploadPixels:0,
+    impactMaskHits:0,impactMaskMisses:0,projectilePairCandidates:0,projectilePairResolved:0,
+    sniperTrailSegments:0,projectilePeakCount:0,spawnQueuePeak:0,spawnQueueRejected:0,spawnQueueDroppedOldest:0
+  };
   let perfTiming={
     simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,
     territoryPaintMs:0,territoryUploadMs:0,projectileBroadphaseMs:0,projectileResolveMs:0,trailMs:0,sniperTrailMs:0,
     renderPrepareMs:0,renderMachineMs:0,renderSniperMs:0,orbRenderMs:0,renderEffectsMs:0,warMsPerRender:0,leftMsPerRender:0
   };
-  window.__perfDebug=()=>({
-    displayFps,projectiles:gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length,projectilePool:projectilePool.length,balls:balls.length,effects:pulses.length,gpuBattle:gpuBattle?.info?.()||null,
-    droppedSimulationTime,simAccumulator,territoryGpuActive,territoryGpuBackend,territoryGpuRenderer,
-    renderCacheSizes:{leftStatic:[leftStaticCanvas.width,leftStaticCanvas.height],leftSemiStatic:[leftSemiStaticCanvas.width,leftSemiStaticCanvas.height],battleStatic:[battleStaticCanvas.width,battleStaticCanvas.height]},
-    territoryDirtyTiles:territoryGpuActive?dirtyOwnerTileCount+dirtyTickTileCount:dirtyTerritoryColorTileCount,
-    territoryOwnerDirtyTiles:dirtyOwnerTileCount,territoryTickDirtyTiles:dirtyTickTileCount,
-    ...perfTiming,...perfCounters,projectilePoolSize:projectilePool.length
-  });
-  window.__perfReset=()=>{
-    for(const key of Object.keys(perfCounters))perfCounters[key]=0;
-    perfCounters.projectilePeakCount=gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length;
-  };
-  function simulateStep(dt){
-    territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;
-    if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}
-    simulationElapsed+=dt;
-    updateConverterLayout(simulationElapsed);
-    const ballsPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-    updateBalls(dt*MATRIX_SIMULATION_SPEED_SCALE);
-    if(PERF_DEBUG_ACTIVE){perfBallsMs+=performance.now()-ballsPerfStart;perfBallSteps++;}
-    warSimulationCarry+=dt;
-    if(warSimulationCarry>=WAR_SIM_STEP){
-      const warDt=warSimulationCarry;
-      warSimulationCarry%=WAR_SIM_STEP;
-      const warSimPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-      updateWar(warDt);
-      if(PERF_DEBUG_ACTIVE){perfWarSimMs+=performance.now()-warSimPerfStart;perfSimSteps++;}
+
+  function createPerformanceMonitor(enabled){
+    const start=()=>enabled?performance.now():0;
+    function measure(metric,startedAt){
+      if(!enabled)return 0;
+      const elapsed=performance.now()-startedAt;
+      if(metric==='warMoveMs')perfWarMoveMs+=elapsed;
+      else if(metric==='warPairMs')perfWarPairMs+=elapsed;
+      else if(metric==='warPaintMs')perfWarPaintMs+=elapsed;
+      return elapsed;
     }
-    updateMonochromeVictory(dt);
-    hudTextCarry+=dt;
-    if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;updateBaseTextCaches();}
+    function recordFrame(startedAt){if(enabled){perfSimMs+=performance.now()-startedAt;perfFrameSamples++;}}
+    function recordBalls(startedAt){if(enabled){perfBallsMs+=performance.now()-startedAt;perfBallSteps++;}}
+    function recordWarSimulation(startedAt){if(enabled){perfWarSimMs+=performance.now()-startedAt;perfSimSteps++;}}
+    function recordLeftRender(startedAt){if(enabled)perfLeftMs+=performance.now()-startedAt;}
+    function recordBattleRender(startedAt){if(enabled){perfWarMs+=performance.now()-startedAt;perfRenderSamples++;}}
+    function clearSamples(){
+      perfSimMs=perfBallsMs=perfWarSimMs=perfWarMoveMs=perfWarPairMs=perfWarPaintMs=perfWarMs=perfLeftMs=0;
+      perfFrameSamples=perfBallSteps=perfSimSteps=perfRenderSamples=0;
+      perfTerritoryPaintMs=perfTerritoryUploadMs=perfProjectileBroadphaseMs=perfProjectileResolveMs=perfTrailUpdateMs=perfSniperTrailMs=0;
+      perfRenderPrepareMs=perfRenderMachineMs=perfRenderSniperMs=perfRenderOrbMs=perfRenderEffectsMs=0;
+      perfTerritoryPaintSamples=perfTerritoryUploadSamples=perfTrailSamples=0;
+    }
+    function rollup(){
+      if(!enabled)return perfTiming;
+      perfTiming={
+        simMsPerFrame:perfSimMs/Math.max(1,perfFrameSamples),
+        ballsMsPerStep:perfBallsMs/Math.max(1,perfBallSteps),
+        warSimMsPerStep:perfWarSimMs/Math.max(1,perfSimSteps),
+        warMoveMsPerStep:perfWarMoveMs/Math.max(1,perfSimSteps),
+        warPairMsPerStep:perfWarPairMs/Math.max(1,perfSimSteps),
+        warPaintMsPerStep:perfWarPaintMs/Math.max(1,perfSimSteps),
+        territoryPaintMs:perfTerritoryPaintMs/Math.max(1,perfTerritoryPaintSamples),
+        territoryUploadMs:perfTerritoryUploadMs/Math.max(1,perfTerritoryUploadSamples),
+        projectileBroadphaseMs:perfProjectileBroadphaseMs/Math.max(1,perfSimSteps),
+        projectileResolveMs:perfProjectileResolveMs/Math.max(1,perfSimSteps),
+        trailMs:perfTrailUpdateMs/Math.max(1,perfTrailSamples),
+        sniperTrailMs:perfSniperTrailMs/Math.max(1,perfTrailSamples),
+        renderPrepareMs:perfRenderPrepareMs/Math.max(1,perfRenderSamples),
+        renderMachineMs:perfRenderMachineMs/Math.max(1,perfRenderSamples),
+        renderSniperMs:perfRenderSniperMs/Math.max(1,perfRenderSamples),
+        orbRenderMs:perfRenderOrbMs/Math.max(1,perfRenderSamples),
+        renderEffectsMs:perfRenderEffectsMs/Math.max(1,perfRenderSamples),
+        warMsPerRender:perfWarMs/Math.max(1,perfRenderSamples),
+        leftMsPerRender:perfLeftMs/Math.max(1,perfRenderSamples)
+      };
+      clearSamples();
+      return perfTiming;
+    }
+    function reset(){
+      clearSamples();
+      for(const key of Object.keys(perfCounters))perfCounters[key]=0;
+      perfCounters.projectilePeakCount=gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length;
+      perfTiming={simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,territoryPaintMs:0,territoryUploadMs:0,projectileBroadphaseMs:0,projectileResolveMs:0,trailMs:0,sniperTrailMs:0,renderPrepareMs:0,renderMachineMs:0,renderSniperMs:0,orbRenderMs:0,renderEffectsMs:0,warMsPerRender:0,leftMsPerRender:0};
+    }
+    return Object.freeze({enabled,start,measure,recordFrame,recordBalls,recordWarSimulation,recordLeftRender,recordBattleRender,rollup,reset,snapshot:()=>({...perfTiming,...perfCounters})});
   }
-  function frame(now){
-    const elapsed=Math.min(.1,(now-last)/1000);last=now;
-    if(matchVideoRenderActive){requestAnimationFrame(frame);return;}
-    const simPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-    if(!paused){
-      simAccumulator+=elapsed*speed;
-      let steps=0;
-      // v73：随模拟倍率动态增加每帧可执行步数，确保高倍速不是只改变滑杆数值。
-      const maxSimSteps=IS_MOBILE_DEVICE?Math.min(24,Math.max(8,Math.ceil(speed*1.6))):Math.min(48,Math.max(12,Math.ceil(speed*2.5)));
-      // Hidden tabs can be throttled to ~1 rAF/s. Submitting a full 12+ step
-      // catch-up burst can trip the Windows GPU watchdog under stress. This
-      // limits only hidden-tab burst size; visible 120 Hz simulation is unchanged.
-      const frameStepBudget=document.hidden?Math.min(2,maxSimSteps):maxSimSteps;
-      while(simAccumulator>=SIM_STEP&&steps<frameStepBudget&&!paused){simulateStep(SIM_STEP);simAccumulator-=SIM_STEP;steps++;}
-      if(steps===frameStepBudget&&simAccumulator>SIM_STEP*4){
-        const retained=SIM_STEP*4;
-        droppedSimulationTime+=simAccumulator-retained;
-        simAccumulator=retained;
+
+  // 6. Systems
+  function createPhysicsSystem(){
+    return Object.freeze({update(dt){updateBalls(dt*MATRIX_SIMULATION_SPEED_SCALE);}});
+  }
+  function createMatrixSystem({physics}){
+    return Object.freeze({
+      init:buildBoard,
+      reset(){balls.length=0;resetTopHitCounts();buildPegRotors();state.diagnostics.matrixTimeoutCount=0;initializeFixedBallPool();},
+      update:dt=>physics.update(dt),
+      updateLayout:updateConverterLayout
+    });
+  }
+  function createWeaponSystem(){return Object.freeze({trigger:triggerWeapon});}
+  function createBattleSystem(){
+    return Object.freeze({
+      update:updateWar,
+      reset(){
+        for(const group of machineVisualGroups){group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;}
+        sniperAimJobs.length=0;nextSniperAimId=1;
+        while(projectiles.length){const projectile=projectiles.pop();projectile.orbShieldContacts=0;projectilePool.push(projectile);}
+        fireQueue.length=0;previousOrbPairContacts.clear();currentOrbPairContacts.clear();
+        for(const index of activeProjectileBuckets)projectileCollisionBuckets[index].length=0;
+        for(const index of activeOrbProjectileBuckets)projectileOrbCollisionBuckets[index].length=0;
+        activeProjectileBuckets.length=0;activeOrbProjectileBuckets.length=0;
+        renderOrbProjectiles.length=renderOtherProjectiles.length=renderSniperProjectiles.length=renderMachineProjectiles.length=0;
+        for(let faction=0;faction<FACTIONS.length;faction++){renderOtherProjectilesByFaction[faction].length=0;renderMachineProjectilesByFaction[faction].length=0;}
+        beams.length=pulses.length=frameTrailSegments.length=sniperTrailSegments.length=0;
+        trailUpdateCarry=effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;
+        trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);combinedTrailCtx.clearRect(0,0,combinedTrailCanvas.width,combinedTrailCanvas.height);clearSniperTrailLayers();
       }
-    }else simAccumulator=0;
-    if(PERF_DEBUG_ACTIVE){perfSimMs+=performance.now()-simPerfStart;perfFrameSamples++;}
-    const renderInterval=1000/PERF_PROFILE.renderHz,leftRenderInterval=1000/PERF_PROFILE.leftRenderHz;
-    renderAccumulatorMs+=elapsed*1000;leftRenderAccumulatorMs+=elapsed*1000;
-    if(renderAccumulatorMs>=renderInterval){
-      renderAccumulatorMs%=renderInterval;
-      if(leftRenderAccumulatorMs>=leftRenderInterval){
-        leftRenderAccumulatorMs%=leftRenderInterval;
-        const leftPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-        drawLeft();
-        if(PERF_DEBUG_ACTIVE)perfLeftMs+=performance.now()-leftPerfStart;
-      }
-      const warPerfStart=PERF_DEBUG_ACTIVE?performance.now():0;
-      drawWar();fpsFrames++;
-      if(PERF_DEBUG_ACTIVE){perfWarMs+=performance.now()-warPerfStart;perfRenderSamples++;}
-      updateMatchVideoCompositor(now);
-    }
-    if(now-fpsWindowStart>=500){
-      displayFps=Math.round(fpsFrames*1000/(now-fpsWindowStart));fpsFrames=0;fpsWindowStart=now;
-      if(PERF_DEBUG_ACTIVE){
-        perfTiming={
-          simMsPerFrame:perfSimMs/Math.max(1,perfFrameSamples),
-          ballsMsPerStep:perfBallsMs/Math.max(1,perfBallSteps),
-          warSimMsPerStep:perfWarSimMs/Math.max(1,perfSimSteps),
-          warMoveMsPerStep:perfWarMoveMs/Math.max(1,perfSimSteps),
-          warPairMsPerStep:perfWarPairMs/Math.max(1,perfSimSteps),
-          warPaintMsPerStep:perfWarPaintMs/Math.max(1,perfSimSteps),
-          territoryPaintMs:perfTerritoryPaintMs/Math.max(1,perfTerritoryPaintSamples),
-          territoryUploadMs:perfTerritoryUploadMs/Math.max(1,perfTerritoryUploadSamples),
-          projectileBroadphaseMs:perfProjectileBroadphaseMs/Math.max(1,perfSimSteps),
-          projectileResolveMs:perfProjectileResolveMs/Math.max(1,perfSimSteps),
-          trailMs:perfTrailUpdateMs/Math.max(1,perfTrailSamples),
-          sniperTrailMs:perfSniperTrailMs/Math.max(1,perfTrailSamples),
-          renderPrepareMs:perfRenderPrepareMs/Math.max(1,perfRenderSamples),
-          renderMachineMs:perfRenderMachineMs/Math.max(1,perfRenderSamples),
-          renderSniperMs:perfRenderSniperMs/Math.max(1,perfRenderSamples),
-          orbRenderMs:perfRenderOrbMs/Math.max(1,perfRenderSamples),
-          renderEffectsMs:perfRenderEffectsMs/Math.max(1,perfRenderSamples),
-          warMsPerRender:perfWarMs/Math.max(1,perfRenderSamples),
-          leftMsPerRender:perfLeftMs/Math.max(1,perfRenderSamples)
+    });
+  }
+  function createTerritorySystem({data}){
+    return Object.freeze({
+      data,
+      init:initTerritoryRenderer,
+      reset:resetTerritoryState,
+      beginStep(){territoryRefreshStepId=(territoryRefreshStepId+1)>>>0;if(territoryRefreshStepId===0){territoryRefreshStamp.fill(0);territoryRefreshStepId=1;}},
+      update:updateMonochromeVictory
+    });
+  }
+
+  // 7. Renderers
+  function createRenderers(){
+    return Object.freeze({
+      init:buildRenderCaches,
+      matrix:Object.freeze({render:drawLeft}),
+      battle:Object.freeze({
+        render:drawWar,
+        layers:Object.freeze({background:drawBattleBackgroundLayer,projectiles:drawProjectileLayer,effects:drawWarEffects,bases:drawBattleBaseLayer,targeting:drawSniperTargeting})
+      }),
+      hud:Object.freeze({render:updateStats,renderBaseText:updateBaseTextCaches})
+    });
+  }
+
+  // 8. Recording Service
+  function createRecordingService(){
+    return Object.freeze({
+      start:startMatchRecording,
+      stop:stopMatchRecording,
+      updateCompositor:updateMatchVideoCompositor,
+      updateControls:updateMatchRecordingControls,
+      isRendering:()=>matchVideoRenderActive,
+      isActive:()=>matchVideoRenderActive||!!matchRecorder&&matchRecorder.state!=='inactive',
+      reset(){matchRecordingLastFrame=0;updateMatchRecordingControls();}
+    });
+  }
+
+  // 9. Debug Service
+  function createDebugService(){
+    return Object.freeze({
+      log:appendDebugLog,
+      install(){
+        window.__perfDebug=()=>{
+          const loop=gameLoop?.snapshot()||{displayFps:0,droppedSimulationTime:0,simAccumulator:0};
+          return {
+            ...loop,
+            projectiles:gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length,projectilePool:projectilePool.length,balls:balls.length,effects:pulses.length,gpuBattle:gpuBattle?.info?.()||null,
+            territoryGpuActive,territoryGpuBackend,territoryGpuRenderer,
+            renderCacheSizes:{leftStatic:[leftStaticCanvas.width,leftStaticCanvas.height],leftSemiStatic:[leftSemiStaticCanvas.width,leftSemiStaticCanvas.height],battleStatic:[battleStaticCanvas.width,battleStaticCanvas.height]},
+            territoryDirtyTiles:territoryGpuActive?dirtyOwnerTileCount+dirtyTickTileCount:dirtyTerritoryColorTileCount,
+            territoryOwnerDirtyTiles:dirtyOwnerTileCount,territoryTickDirtyTiles:dirtyTickTileCount,
+            ...performanceMonitor.snapshot(),projectilePoolSize:projectilePool.length
+          };
         };
-        perfSimMs=perfBallsMs=perfWarSimMs=perfWarMoveMs=perfWarPairMs=perfWarPaintMs=perfWarMs=perfLeftMs=0;perfFrameSamples=perfBallSteps=perfSimSteps=perfRenderSamples=0;
-        perfTerritoryPaintMs=perfTerritoryUploadMs=perfProjectileBroadphaseMs=perfProjectileResolveMs=perfTrailUpdateMs=perfSniperTrailMs=0;
-        perfRenderPrepareMs=perfRenderMachineMs=perfRenderSniperMs=perfRenderOrbMs=perfRenderEffectsMs=0;
-        perfTerritoryPaintSamples=perfTerritoryUploadSamples=perfTrailSamples=0;
+        window.__perfReset=()=>performanceMonitor.reset();
+        window.__appArchitecture=()=>({
+          build:BUILD_INFO,config:CONFIG,state,
+          systems:Object.freeze({physics:physicsSystem,matrix:matrixSystem,weapon:weaponSystem,battle:battleSystem,territory:territorySystem}),
+          renderers,services:Object.freeze({recording:recordingService,performance:performanceMonitor,debug:debugService}),
+          ui:uiController,gameLoop,app
+        });
       }
-    }
-    if(!bootFrameCompleted){bootFrameCompleted=true;if(bootNotice)bootNotice.classList.add('hidden');}
-    requestAnimationFrame(frame);
+    });
   }
 
-  function resetGameState(){
-    globalStartValueMultiplier=1;simulationElapsed=0;paused=false;simAccumulator=0;warSimulationCarry=0;droppedSimulationTime=0;
-    renderAccumulatorMs=0;leftRenderAccumulatorMs=0;gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
-    for(const key of Object.keys(perfCounters))perfCounters[key]=0;
-  }
-
-  function resetFactionState(){
-    for(let i=0;i<FACTIONS.length;i++){
-      STOCK_KEYS.forEach(key=>stocks[i][key]=0);
-      shieldValue[i]=INITIAL_SHIELD_VALUE;shieldFlash[i]=0;shieldGainFlash[i]=0;machineGainFlash[i]=0;eliminated[i]=false;eliminationFlash[i]=0;
-      shieldRecoilX[i]=shieldRecoilY[i]=shieldRecoilVX[i]=shieldRecoilVY[i]=0;
-      powerHistory[i].length=0;powerHistory[i].push({t:0,v:1});
-    }
-    lastPowerHistoryTime=0;
-  }
-
-  function resetMatrixState(){
-    balls.length=0;resetTopHitCounts();buildPegRotors();initializeFixedBallPool();
-  }
-
-  function resetBattleState(){
-    machineFirepowerPool.fill(INITIAL_MACHINE_FIREPOWER);machineShotIndex.fill(0);
-    for(const group of machineVisualGroups){group.rounds=0;group.damage=0;group.sin=0;group.cos=0;group.speed=0;group.count=0;group.seed=0;}
-    for(let i=0;i<FACTIONS.length;i++){cannonAngle[i]=INITIAL_CANNON_ANGLES[i];cannonStepCarry[i]=0;}
-    sniperAimJobs.length=0;nextSniperAimId=1;
-  }
-
-  function resetProjectileState(){
-    while(projectiles.length){const p=projectiles.pop();p.orbShieldContacts=0;projectilePool.push(p);}
-    fireQueue.length=0;previousOrbPairContacts.clear();currentOrbPairContacts.clear();
-    for(const index of activeProjectileBuckets)projectileCollisionBuckets[index].length=0;
-    for(const index of activeOrbProjectileBuckets)projectileOrbCollisionBuckets[index].length=0;
-    activeProjectileBuckets.length=0;activeOrbProjectileBuckets.length=0;renderOrbProjectiles.length=0;renderOtherProjectiles.length=0;renderSniperProjectiles.length=0;renderMachineProjectiles.length=0;
-    for(let f=0;f<FACTIONS.length;f++){renderOtherProjectilesByFaction[f].length=0;renderMachineProjectilesByFaction[f].length=0;}
-  }
-
-  function resetEffectsState(){
-    beams.length=0;pulses.length=0;frameTrailSegments.length=0;sniperTrailSegments.length=0;
-    trailUpdateCarry=0;effectUpdateCarry=0;hudTextCarry=HUD_TEXT_STEP;
-    trailCtx.clearRect(0,0,trailCanvas.width,trailCanvas.height);combinedTrailCtx.clearRect(0,0,combinedTrailCanvas.width,combinedTrailCanvas.height);clearSniperTrailLayers();
-  }
-
-  function rebuildRequiredCaches(){updateConverterLayout(0);}
-
-  function updateUIAfterReset(){
-    if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
-    if(UI.feed)UI.feed.innerHTML='';
-    updateBaseTextCaches();
-    log(`战场已重置：运行时间不设上限；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒后结束本局。`);
-    updateStocks();updateStats();
-  }
-
-  function resetGame(){
-    resetGameState();resetFactionState();resetMatrixState();resetTerritoryState();resetBattleState();resetProjectileState();resetEffectsState();
-    if(gpuBattleActive&&gpuBattle?.ready)gpuBattle.resetFromCpu();
-    rebuildRequiredCaches();updateUIAfterReset();
-  }
-
-  UI.factionButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.factionButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedFaction=Number(btn.dataset.faction);updateStocks();updateStats();}));
-  UI.weaponButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.weaponButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedWeapon=btn.dataset.weapon;}));
-  if(UI.launchBtn)UI.launchBtn.addEventListener('click',relaunchSelectedFaction);
-  document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','BUTTON','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();relaunchSelectedFaction();}});
-  if(UI.offsetRange&&UI.offsetText)UI.offsetRange.addEventListener('input',e=>UI.offsetText.textContent=e.target.value+'%');
-  if(UI.driftRange&&UI.driftText)UI.driftRange.addEventListener('input',e=>UI.driftText.textContent=e.target.value);
+  // 10. UI Controller
   const speedRange=UI.speedRange,speedText=UI.speedText;
-  function updateSpeedControl(){if(!speedRange||!speedText)return;speed=Number(speedRange.value);speedText.textContent=speed.toFixed(2)+'×';}
-  if(speedRange)speedRange.addEventListener('input',updateSpeedControl);
-  updateSpeedControl();
-  if(UI.profileBadge)UI.profileBadge.textContent=PERF_PROFILE.name;
-  if(UI.pauseBtn)UI.pauseBtn.addEventListener('click',e=>{if(gameEnded)return;paused=!paused;e.target.textContent=paused?'继续':'暂停';updateStats();});
-  if(UI.recordGameBtn)UI.recordGameBtn.addEventListener('click',startMatchRecording);
-  if(UI.stopRecordBtn)UI.stopRecordBtn.addEventListener('click',()=>stopMatchRecording('手动结束'));
-  document.addEventListener('visibilitychange',()=>{last=performance.now();simAccumulator=0;renderAccumulatorMs=0;leftRenderAccumulatorMs=0;if(!document.hidden)updateStats();});
-  if(UI.resetBtn)UI.resetBtn.addEventListener('click',()=>{
-    if(matchRecorder&&matchRecorder.state!=='inactive')stopMatchRecording('用户重置');
-    resetGame();
-  });
-  async function bootGame(){
-    await initTerritoryRenderer();
-    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
-    await initGpuBattle();if(gpuBattleActive&&gpuBattle?.ready){gpuBattle.resetFromCpu();runPerfGpuSelfTests();}
-    for(let f=0;f<4;f++)if(powerHistory[f].length===0)powerHistory[f].push({t:0,v:1});
-    lastPowerHistoryTime=0;
-    updateStocks();updateStats();void preflightHqRendererDependency();
-    log(`${BUILD_INFO.name} v${BUILD_INFO.version} ready · ${PERF_PROFILE.name} · ${territoryGpuBackend+' territory'}`);
-    setInterval(updateStats,250);requestAnimationFrame(frame);
-    if(AUTO_RECORD_AT_LOAD){
-      if(UI.videoResolution&&VIDEO_RENDER_REQUEST.startsWith('2160'))UI.videoResolution.value='2160';
-      if(speedRange){speedRange.value='1';updateSpeedControl();}
-      setTimeout(()=>startMatchRecording(),1200);
+  function createUIController(){
+    let initialized=false,statsTimer=0;
+    function updateSpeedControl(){if(!speedRange||!speedText)return;speed=Number(speedRange.value);speedText.textContent=speed.toFixed(2)+'×';}
+    function resetView(){
+      if(UI.pauseBtn){UI.pauseBtn.disabled=false;UI.pauseBtn.textContent='暂停';}
+      if(UI.feed)UI.feed.innerHTML='';
+      renderers.hud.renderBaseText();renderers.hud.render();
     }
+    function init(){
+      if(initialized)return;initialized=true;
+      UI.factionButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.factionButtons.forEach(button=>button.classList.remove('active'));btn.classList.add('active');selectedFaction=Number(btn.dataset.faction);updateStocks();updateStats();}));
+      UI.weaponButtons.forEach(btn=>btn.addEventListener('click',()=>{UI.weaponButtons.forEach(button=>button.classList.remove('active'));btn.classList.add('active');selectedWeapon=btn.dataset.weapon;}));
+      UI.launchBtn?.addEventListener('click',relaunchSelectedFaction);
+      document.addEventListener('keydown',event=>{if(event.code==='Space'&&!['INPUT','BUTTON','SELECT'].includes(document.activeElement.tagName)){event.preventDefault();relaunchSelectedFaction();}});
+      UI.offsetRange?.addEventListener('input',event=>{if(UI.offsetText)UI.offsetText.textContent=event.target.value+'%';});
+      UI.driftRange?.addEventListener('input',event=>{if(UI.driftText)UI.driftText.textContent=event.target.value;});
+      speedRange?.addEventListener('input',updateSpeedControl);updateSpeedControl();
+      if(UI.profileBadge)UI.profileBadge.textContent=PERF_PROFILE.name;
+      UI.pauseBtn?.addEventListener('click',event=>{if(gameEnded)return;paused=!paused;event.target.textContent=paused?'继续':'暂停';updateStats();});
+      UI.recordGameBtn?.addEventListener('click',recordingService.start);
+      UI.stopRecordBtn?.addEventListener('click',()=>recordingService.stop('手动结束'));
+      document.addEventListener('visibilitychange',()=>{gameLoop.resetTiming();if(!document.hidden)updateStats();});
+      UI.resetBtn?.addEventListener('click',()=>{if(recordingService.isActive())recordingService.stop('用户重置');app.reset();});
+      statsTimer=window.setInterval(updateStats,250);
+    }
+    return Object.freeze({init,resetView,updateSpeedControl,dispose(){if(statsTimer)clearInterval(statsTimer);statsTimer=0;}});
   }
-  void bootGame().catch(error=>{
-    console.error('游戏启动失败：',error);
-    activateTerritoryCpuFallback('GPU 渲染器启动异常');
-    resetTerritoryState();resetMatrixState();resetBattleState();updateBaseTextCaches();updateTerritoryRendererBadge();
-    updateStocks();updateStats();setInterval(updateStats,250);requestAnimationFrame(frame);
-  });
+
+  // 11. Game Loop
+  function createGameLoop({update,renderers,recording,monitor}){
+    let running=false,last=performance.now(),renderAccumulatorMs=0,leftRenderAccumulatorMs=0,simAccumulator=0,droppedSimulationTime=0;
+    let fpsWindowStart=performance.now(),fpsFrames=0,displayFps=0;
+    function frame(now){
+      if(!running)return;
+      const elapsed=Math.min(CONFIG.time.maxFrameDelta,(now-last)/1000);last=now;
+      if(recording.isRendering()){requestAnimationFrame(frame);return;}
+      const simPerfStart=monitor.start();
+      if(!paused){
+        simAccumulator+=elapsed*speed;
+        let steps=0;
+        const maxSimSteps=IS_MOBILE_DEVICE?Math.min(24,Math.max(8,Math.ceil(speed*1.6))):Math.min(48,Math.max(12,Math.ceil(speed*2.5)));
+        // Hidden tabs are heavily throttled. Keep the v216 GPU-watchdog burst guard intact.
+        const frameStepBudget=document.hidden?Math.min(2,maxSimSteps):maxSimSteps;
+        while(simAccumulator>=SIM_STEP&&steps<frameStepBudget&&!paused){update(SIM_STEP);simAccumulator-=SIM_STEP;steps++;}
+        if(steps===frameStepBudget&&simAccumulator>SIM_STEP*4){const retained=SIM_STEP*4;droppedSimulationTime+=simAccumulator-retained;simAccumulator=retained;}
+      }else simAccumulator=0;
+      monitor.recordFrame(simPerfStart);
+      const renderInterval=1000/PERF_PROFILE.renderHz,leftRenderInterval=1000/PERF_PROFILE.leftRenderHz;
+      renderAccumulatorMs+=elapsed*1000;leftRenderAccumulatorMs+=elapsed*1000;
+      if(renderAccumulatorMs>=renderInterval){
+        renderAccumulatorMs%=renderInterval;
+        if(leftRenderAccumulatorMs>=leftRenderInterval){leftRenderAccumulatorMs%=leftRenderInterval;const leftStart=monitor.start();renderers.matrix.render();monitor.recordLeftRender(leftStart);}
+        const battleStart=monitor.start();renderers.battle.render();monitor.recordBattleRender(battleStart);fpsFrames++;
+        recording.updateCompositor(now);
+      }
+      if(now-fpsWindowStart>=500){displayFps=Math.round(fpsFrames*1000/(now-fpsWindowStart));fpsFrames=0;fpsWindowStart=now;monitor.rollup();}
+      if(!bootFrameCompleted){bootFrameCompleted=true;if(bootNotice)bootNotice.classList.add('hidden');}
+      requestAnimationFrame(frame);
+    }
+    return Object.freeze({
+      start(){if(running)return;running=true;last=performance.now();requestAnimationFrame(frame);},
+      stop(){running=false;},
+      reset(){last=performance.now();renderAccumulatorMs=leftRenderAccumulatorMs=simAccumulator=droppedSimulationTime=0;fpsFrames=displayFps=0;fpsWindowStart=last;monitor.reset();},
+      resetTiming(){last=performance.now();renderAccumulatorMs=leftRenderAccumulatorMs=simAccumulator=0;},
+      clearAccumulator(){simAccumulator=0;},
+      invalidateLeftRender(){leftRenderAccumulatorMs=0;},
+      snapshot:()=>({running,displayFps,droppedSimulationTime,simAccumulator})
+    });
+  }
+
+  // 12. App lifecycle
+  function createApp({state,systems,renderers,recording,ui,monitor}){
+    let warSimulationCarry=0,initialized=false;
+    function update(dt){
+      systems.territory.beginStep();simulationElapsed+=dt;systems.matrix.updateLayout(simulationElapsed);
+      const ballsStart=monitor.start();systems.matrix.update(dt);monitor.recordBalls(ballsStart);
+      warSimulationCarry+=dt;
+      if(warSimulationCarry>=WAR_SIM_STEP){const warDt=warSimulationCarry;warSimulationCarry%=WAR_SIM_STEP;const warStart=monitor.start();systems.battle.update(warDt);monitor.recordWarSimulation(warStart);}
+      systems.territory.update(dt);
+      hudTextCarry+=dt;
+      if(hudTextCarry>=HUD_TEXT_STEP){hudTextCarry%=HUD_TEXT_STEP;state.ui.baseTextDirty=true;}
+      if(state.ui.baseTextDirty){state.ui.baseTextDirty=false;renderers.hud.renderBaseText();}
+      if(state.ui.dirty){state.ui.dirty=false;renderers.hud.render();}
+    }
+    function reset({initial=false}={}){
+      state.resetFactions();globalStartValueMultiplier=1;simulationElapsed=0;warSimulationCarry=0;hudTextCarry=HUD_TEXT_STEP;
+      systems.matrix.reset();systems.territory.reset();systems.battle.reset();recording.reset();
+      for(let index=0;index<CONFIG.faction.count;index++){powerHistory[index].length=0;powerHistory[index].push({t:0,v:1});}
+      lastPowerHistoryTime=0;systems.matrix.updateLayout(0);paused=false;gameEnded=false;winnerFaction=-1;monochromeFaction=-1;monochromeHoldSeconds=0;
+      if(gpuBattleActive&&gpuBattle?.ready)gpuBattle.resetFromCpu();
+      state.ui.dirty=true;state.ui.baseTextDirty=true;gameLoop.reset();ui.resetView();
+      if(!initial)log(`战场已重置：运行时间不设上限；任一阵营连续占领全部领土 ${MONOCHROME_WIN_SECONDS} 秒后结束本局。`);
+    }
+    async function init(){
+      if(initialized)return;initialized=true;
+      systems.matrix.init();renderers.init();await systems.territory.init();ui.init();reset({initial:true});updateTerritoryRendererBadge();
+      await initGpuBattle();if(gpuBattleActive&&gpuBattle?.ready){gpuBattle.resetFromCpu();runPerfGpuSelfTests();}
+      renderers.hud.renderBaseText();renderers.hud.render();void preflightHqRendererDependency();
+      log(`${BUILD_INFO.name} v${BUILD_INFO.version} ready · ${PERF_PROFILE.name} · ${territoryGpuBackend+' territory'}`);
+      gameLoop.start();
+      if(AUTO_RECORD_AT_LOAD){if(UI.videoResolution&&VIDEO_RENDER_REQUEST.startsWith('2160'))UI.videoResolution.value='2160';if(speedRange){speedRange.value='1';ui.updateSpeedControl();}setTimeout(recording.start,1200);}
+    }
+    async function recover(error){
+      console.error('游戏启动失败：',error);activateTerritoryCpuFallback('GPU 渲染器启动异常');
+      ui.init();systems.matrix.reset();systems.territory.reset();systems.battle.reset();renderers.hud.renderBaseText();updateTerritoryRendererBadge();renderers.hud.render();gameLoop.start();
+    }
+    return Object.freeze({init,reset,update,recover});
+  }
+
+  const physicsSystem=createPhysicsSystem();
+  const matrixSystem=createMatrixSystem({physics:physicsSystem});
+  const territorySystem=createTerritorySystem({data:territoryData});
+  const battleSystem=createBattleSystem();
+  weaponSystem=createWeaponSystem();
+  renderers=createRenderers();
+  recordingService=createRecordingService();
+  performanceMonitor=createPerformanceMonitor(PERF_DEBUG_ACTIVE);
+  uiController=createUIController();
+  app=createApp({state,systems:Object.freeze({matrix:matrixSystem,territory:territorySystem,battle:battleSystem,weapon:weaponSystem}),renderers,recording:recordingService,ui:uiController,monitor:performanceMonitor});
+  gameLoop=createGameLoop({update:dt=>app.update(dt),renderers,recording:recordingService,monitor:performanceMonitor});
+  debugService=createDebugService();debugService.install();
+
+  // Compatibility entry points used by the deterministic recorder and GPU fatal recovery.
+  function simulateStep(dt){app.update(dt);}
+  function resetGame(){app.reset();}
+  void app.init().catch(error=>app.recover(error));
+
 })();
 </script>
 </body>
