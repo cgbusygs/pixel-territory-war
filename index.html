@@ -7231,6 +7231,14 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
 
   function createPerformanceMonitor(enabled){
     const start=()=>enabled?performance.now():0;
+    function measure(metric,startedAt){
+      if(!enabled)return 0;
+      const elapsed=performance.now()-startedAt;
+      if(metric==='warMoveMs')perfWarMoveMs+=elapsed;
+      else if(metric==='warPairMs')perfWarPairMs+=elapsed;
+      else if(metric==='warPaintMs')perfWarPaintMs+=elapsed;
+      return elapsed;
+    }
     function recordFrame(startedAt){if(enabled){perfSimMs+=performance.now()-startedAt;perfFrameSamples++;}}
     function recordBalls(startedAt){if(enabled){perfBallsMs+=performance.now()-startedAt;perfBallSteps++;}}
     function recordWarSimulation(startedAt){if(enabled){perfWarSimMs+=performance.now()-startedAt;perfSimSteps++;}}
@@ -7275,7 +7283,7 @@ struct OrbLabelOut{@builtin(position) position:vec4f,@location(0) local:vec2f,@l
       perfCounters.projectilePeakCount=gpuBattleActive?gpuActiveProjectileEstimate:projectiles.length;
       perfTiming={simMsPerFrame:0,ballsMsPerStep:0,warSimMsPerStep:0,warMoveMsPerStep:0,warPairMsPerStep:0,warPaintMsPerStep:0,territoryPaintMs:0,territoryUploadMs:0,projectileBroadphaseMs:0,projectileResolveMs:0,trailMs:0,sniperTrailMs:0,renderPrepareMs:0,renderMachineMs:0,renderSniperMs:0,orbRenderMs:0,renderEffectsMs:0,warMsPerRender:0,leftMsPerRender:0};
     }
-    return Object.freeze({enabled,start,recordFrame,recordBalls,recordWarSimulation,recordLeftRender,recordBattleRender,rollup,reset,snapshot:()=>({...perfTiming,...perfCounters})});
+    return Object.freeze({enabled,start,measure,recordFrame,recordBalls,recordWarSimulation,recordLeftRender,recordBattleRender,rollup,reset,snapshot:()=>({...perfTiming,...perfCounters})});
   }
 
   // 6. Systems
